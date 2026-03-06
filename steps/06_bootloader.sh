@@ -16,7 +16,7 @@ echo "LUKS UUID: $CRYPT_UUID"
 echo
 echo "Installing Limine..."
 
-arch-chroot /mnt pacman -S --noconfirm limine
+arch-chroot /mnt pacman -S --noconfirm --needed limine
 
 echo
 echo "Installing Limine to disk..."
