@@ -58,7 +58,9 @@ vulkan-icd-loader \
 dosfstools \
 htop \
 fastfetch \
-nano
+nano \
+git \
+reflector \
 
 echo
 echo "Adding CachyOS repository..."
