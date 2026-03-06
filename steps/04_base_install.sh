@@ -46,8 +46,6 @@ echo "Installing base system..."
 pacstrap /mnt \
   base \
   base-devel \
-  linux \
-  linux-headers \
   linux-firmware \
   btrfs-progs \
   networkmanager \
