@@ -14,6 +14,10 @@ fi
 # Getting disk from 01_disk.sh
 DISK=$(cat /tmp/arch_disk)
 
+# Wait until kernel sees new partitions
+udevadm settle
+
+# Detect root partition
 if [[ "$DISK" == *"nvme"* || "$DISK" == *"mmcblk"* ]]; then
     ROOT_PART="${DISK}p2"
 else
@@ -25,6 +29,7 @@ echo "Using root partition: $ROOT_PART"
 
 if [ ! -b "$ROOT_PART" ]; then
     echo "Root partition not found!"
+    lsblk "$DISK"
     exit 1
 fi
 
