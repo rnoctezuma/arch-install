@@ -54,6 +54,14 @@ INITRD_PATH=boot:///intel-ucode.img
 INITRD_PATH=boot:///initramfs-linux-cachyos-nvidia.img
 
 CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=.snapshots rw
+
+:Arch Linux (Rescue Mode)
+PROTOCOL=linux
+KERNEL_PATH=boot:///vmlinuz-linux-cachyos-nvidia
+INITRD_PATH=boot:///intel-ucode.img
+INITRD_PATH=boot:///initramfs-linux-cachyos-nvidia.img
+
+CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rw systemd.unit=emergency.target
 EOF
 
 echo
