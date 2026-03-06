@@ -1,44 +1,59 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
 
-echo "==> Installing Limine bootloader"
+echo "Installing Limine bootloader..."
 
-# читаем данные от предыдущих шагов
+DISK=$(cat /tmp/arch_disk)
 MAPPER_NAME=$(cat /tmp/arch_mapper)
 ROOT_PART=$(cat /tmp/arch_root_part)
 
-# UUID разделов
-ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
 CRYPT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
-EFI_UUID=$(blkid -s UUID -o value /dev/disk/by-partlabel/ESP)
 
-echo "Root UUID: $ROOT_UUID"
-echo "Crypt UUID: $CRYPT_UUID"
-echo "EFI UUID: $EFI_UUID"
+echo "Disk: $DISK"
+echo "Mapper: $MAPPER_NAME"
+echo "LUKS UUID: $CRYPT_UUID"
 
-echo "==> Installing Limine"
+echo
+echo "Installing Limine..."
 
 arch-chroot /mnt pacman -S --noconfirm limine
 
-echo "==> Installing Limine to EFI"
+echo
+echo "Installing Limine to disk..."
 
-arch-chroot /mnt limine-install
+arch-chroot /mnt limine-install "$DISK"
 
-echo "==> Creating Limine config"
+echo
+echo "Creating Limine configuration..."
 
 cat <<EOF > /mnt/boot/limine.conf
-TIMEOUT=3
+TIMEOUT=1
 INTERFACE_RESOLUTION=auto
 
-:Arch Linux
+:Arch Linux (CachyOS kernel)
 PROTOCOL=linux
-KERNEL_PATH=boot:///vmlinuz-linux
-INITRD_PATH=boot:///initramfs-linux.img
+KERNEL_PATH=boot:///vmlinuz-linux-cachyos
+INITRD_PATH=boot:///intel-ucode.img
+INITRD_PATH=boot:///initramfs-linux-cachyos.img
 
-CMDLINE=root=/dev/mapper/$MAPPER_NAME \
-rd.luks.name=$CRYPT_UUID=$MAPPER_NAME \
-rootflags=subvol=@ \
-rw quiet loglevel=3 nowatchdog
+CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off
+
+:Arch Linux (Fallback initramfs)
+PROTOCOL=linux
+KERNEL_PATH=boot:///vmlinuz-linux-cachyos
+INITRD_PATH=boot:///intel-ucode.img
+INITRD_PATH=boot:///initramfs-linux-cachyos-fallback.img
+
+CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=@ rw
+
+:Arch Linux Snapshot (manual entry)
+PROTOCOL=linux
+KERNEL_PATH=boot:///vmlinuz-linux-cachyos
+INITRD_PATH=boot:///intel-ucode.img
+INITRD_PATH=boot:///initramfs-linux-cachyos.img
+
+CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=@snapshots rw
 EOF
 
-echo "==> Limine bootloader configured"
+echo
+echo "Bootloader installation complete."
