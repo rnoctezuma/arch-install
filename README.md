@@ -27,3 +27,9 @@ WIFI setup
   5. station <device> connect <SSID>
   6. Ctrl + C -> check internet connection: ping -c 3 archlinux.org
 ```
+
+### Log into the installed system
+
+```sh
+arch-chroot /mnt
+```
