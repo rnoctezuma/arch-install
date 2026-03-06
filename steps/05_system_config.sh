@@ -50,7 +50,18 @@ echo "Enabling sudo for wheel group..."
 sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers
 
 echo
-echo "Installing CachyOS optimized kernel..."
+echo "Installing essential packages..."
+
+pacman -S --noconfirm \
+mesa \
+vulkan-icd-loader \
+dosfstools \
+htop \
+fastfetch \
+nano
+
+echo
+echo "Adding CachyOS repository..."
 
 pacman -S --noconfirm curl
 
@@ -60,14 +71,18 @@ https://mirror.cachyos.org/cachyos-mirrorlist
 cat <<EOF >> /etc/pacman.conf
 
 [cachyos]
+SigLevel = Required DatabaseOptional
 Include = /etc/pacman.d/cachyos-mirrorlist
 EOF
 
 pacman -Sy
 
+echo
+echo "Installing CachyOS NVIDIA optimized kernel..."
+
 pacman -S --noconfirm \
-linux-cachyos \
-linux-cachyos-headers
+linux-cachyos-nvidia \
+linux-cachyos-nvidia-headers
 
 echo
 echo "Configuring mkinitcpio for LUKS + BTRFS..."
