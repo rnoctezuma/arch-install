@@ -65,3 +65,4 @@ echo "LUKS container opened as /dev/mapper/cryptroot"
 lsblk "$DISK"
 
 echo "cryptroot" > /tmp/arch_mapper
+echo "$ROOT_PART" > /tmp/arch_root_part
