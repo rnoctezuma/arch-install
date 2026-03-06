@@ -17,7 +17,7 @@ DISK=$(cat /tmp/arch_disk)
 ROOT_PART="${DISK}p2"
 
 # if it's not NVMe (for example /dev/sda)
-if [[ "$DISK" != *"nvme"* ]]; then
+if [[ "$DISK" =~ nvme ]]; then
     ROOT_PART="${DISK}2"
 fi
 
