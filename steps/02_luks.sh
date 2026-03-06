@@ -48,6 +48,8 @@ cryptsetup luksFormat \
   --key-size 512 \
   --hash sha512 \
   --pbkdf argon2id \
+  --pbkdf-memory 1048576 \
+  --pbkdf-parallel 4 \
   --iter-time 2000 \
   --verify-passphrase \
   "$ROOT_PART"
