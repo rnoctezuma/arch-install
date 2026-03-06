@@ -15,7 +15,6 @@ echo
 echo "Configuring locale..."
 
 sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
-
 locale-gen
 
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
@@ -61,22 +60,32 @@ fastfetch \
 nano \
 git \
 reflector \
-pacman-contrib
+pacman-contrib \
+curl
 
 echo
-echo "Adding CachyOS repository..."
-
-pacman -S --noconfirm curl
+echo "Adding CachyOS repositories..."
 
 curl -o /etc/pacman.d/cachyos-mirrorlist \
 https://mirror.cachyos.org/cachyos-mirrorlist
 
 cat <<EOF >> /etc/pacman.conf
 
+[cachyos-core]
+SigLevel = Required DatabaseOptional
+Include = /etc/pacman.d/cachyos-mirrorlist
+
+[cachyos-extra]
+SigLevel = Required DatabaseOptional
+Include = /etc/pacman.d/cachyos-mirrorlist
+
 [cachyos]
 SigLevel = Required DatabaseOptional
 Include = /etc/pacman.d/cachyos-mirrorlist
 EOF
+
+echo
+echo "Updating repositories..."
 
 pacman -Sy
 
@@ -90,7 +99,7 @@ linux-cachyos-nvidia-headers
 echo
 echo "Configuring mkinitcpio for LUKS + BTRFS..."
 
-sed -i 's/^MODULES=.*/MODULES=(btrfs)/' /etc/mkinitcpio.conf
+sed -i 's/^MODULES=.*/MODULES=(btrfs nvme xhci_pci)/' /etc/mkinitcpio.conf
 
 sed -i 's/^HOOKS=.*/HOOKS=(base systemd autodetect keyboard sd-vconsole modconf block sd-encrypt filesystems fsck)/' /etc/mkinitcpio.conf
 
