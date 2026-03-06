@@ -1,52 +1,44 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-echo "===================================="
-echo "Arch Installer - Limine Bootloader"
-echo "===================================="
+echo "==> Installing Limine bootloader"
 
-echo
-echo "Installing Limine..."
+# читаем данные от предыдущих шагов
+MAPPER_NAME=$(cat /tmp/arch_mapper)
+ROOT_PART=$(cat /tmp/arch_root_part)
 
-pacman -S --noconfirm limine
+# UUID разделов
+ROOT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
+CRYPT_UUID=$(blkid -s UUID -o value "$ROOT_PART")
+EFI_UUID=$(blkid -s UUID -o value /dev/disk/by-partlabel/ESP)
 
-echo
-echo "Installing Limine to EFI..."
+echo "Root UUID: $ROOT_UUID"
+echo "Crypt UUID: $CRYPT_UUID"
+echo "EFI UUID: $EFI_UUID"
 
-mkdir -p /boot/EFI/BOOT
+echo "==> Installing Limine"
 
-cp /usr/share/limine/BOOTX64.EFI /boot/EFI/BOOT/
-cp /usr/share/limine/limine.conf /boot/limine.conf || true
+arch-chroot /mnt pacman -S --noconfirm limine
 
-echo
-echo "Detecting UUID..."
+echo "==> Installing Limine to EFI"
 
-CRYPTUUID=$(blkid -s UUID -o value $(blkid | grep crypto_LUKS | cut -d: -f1))
+arch-chroot /mnt limine-install
 
-echo "LUKS UUID: $CRYPTUUID"
+echo "==> Creating Limine config"
 
-echo
-echo "Creating Limine configuration..."
-
-cat <<EOF > /boot/limine.conf
-TIMEOUT=5
-DEFAULT_ENTRY=Arch Linux
+cat <<EOF > /mnt/boot/limine.conf
+TIMEOUT=3
+INTERFACE_RESOLUTION=auto
 
 :Arch Linux
-
 PROTOCOL=linux
-KERNEL_PATH=boot:///vmlinuz-linux-cachyos-nvidia
-INITRD_PATH=boot:///initramfs-linux-cachyos-nvidia.img
+KERNEL_PATH=boot:///vmlinuz-linux
+INITRD_PATH=boot:///initramfs-linux.img
 
-CMDLINE=root=/dev/mapper/cryptroot rw rootflags=subvol=@ cryptdevice=UUID=$CRYPTUUID:cryptroot
+CMDLINE=root=/dev/mapper/$MAPPER_NAME \
+rd.luks.name=$CRYPT_UUID=$MAPPER_NAME \
+rootflags=subvol=@ \
+rw quiet loglevel=3 nowatchdog
 EOF
 
-echo
-echo "Limine configuration created."
-
-echo
-echo "Installed files:"
-ls /boot
-
-echo
-echo "Bootloader installation complete."
+echo "==> Limine bootloader configured"
