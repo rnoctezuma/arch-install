@@ -61,6 +61,7 @@ fastfetch \
 nano \
 git \
 reflector \
+pacman-contrib
 
 echo
 echo "Adding CachyOS repository..."
