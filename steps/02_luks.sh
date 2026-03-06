@@ -5,12 +5,18 @@ echo "===================================="
 echo "Arch Installer - LUKS Encryption"
 echo "===================================="
 
-# Getting disk from 01_disk.sh step 
+# Check 01_disk.sh step was completed successfully
+if [ ! -f /tmp/arch_disk ]; then
+    echo "Disk info not found. Run 01_disk.sh first."
+    exit 1
+fi
+
+# Getting disk from 01_disk.sh
 DISK=$(cat /tmp/arch_disk)
 
 ROOT_PART="${DISK}p2"
 
-# if it's not NVMe (for example - /sda/)
+# if it's not NVMe (for example /dev/sda)
 if [[ "$DISK" != *"nvme"* ]]; then
     ROOT_PART="${DISK}2"
 fi
@@ -40,6 +46,9 @@ cryptsetup luksFormat \
   --cipher aes-xts-plain64 \
   --key-size 512 \
   --hash sha512 \
+  --pbkdf argon2id \
+  --iter-time 2000 \
+  --verify-passphrase \
   "$ROOT_PART"
 
 echo
@@ -50,6 +59,6 @@ cryptsetup open "$ROOT_PART" cryptroot
 echo
 echo "LUKS container opened as /dev/mapper/cryptroot"
 
-lsblk
+lsblk "$DISK"
 
 echo "cryptroot" > /tmp/arch_mapper
