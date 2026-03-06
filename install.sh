@@ -24,6 +24,7 @@ for step in "${steps[@]}"; do
   if [[ "$step" == "05_system_config.sh" ]]; then
       cp "$SCRIPT_DIR/steps/$step" /mnt/root/
       arch-chroot /mnt bash "/root/$step"
+      rm /mnt/root/$step
   else
       bash "$SCRIPT_DIR/steps/$step"
   fi
