@@ -5,7 +5,7 @@ Make bootable USB using [balenaEtcher](https://etcher.balena.io/#download-etcher
 
 ### Ensure proper network connectivity
 
-The assumption is that a laptop is being used, intended to connect to the Internet via a wireless connection.
+WIFI setup
 
 ```sh
   1. rfkill unblock all
