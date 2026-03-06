@@ -29,16 +29,17 @@ echo "Creating Limine configuration..."
 cat <<EOF > /mnt/boot/limine.conf
 TIMEOUT=1
 INTERFACE_RESOLUTION=auto
+QUIET=yes
 
-:Arch Linux (CachyOS kernel)
+:Arch Linux (CachyOS Kernel)
 PROTOCOL=linux
 KERNEL_PATH=boot:///vmlinuz-linux-cachyos
 INITRD_PATH=boot:///intel-ucode.img
 INITRD_PATH=boot:///initramfs-linux-cachyos.img
 
-CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off
+CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0
 
-:Arch Linux (Fallback initramfs)
+:Arch Linux (Fallback Initramfs)
 PROTOCOL=linux
 KERNEL_PATH=boot:///vmlinuz-linux-cachyos
 INITRD_PATH=boot:///intel-ucode.img
@@ -46,7 +47,7 @@ INITRD_PATH=boot:///initramfs-linux-cachyos-fallback.img
 
 CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=@ rw
 
-:Arch Linux Snapshot (manual entry)
+:Arch Linux (BTRFS Snapshot)
 PROTOCOL=linux
 KERNEL_PATH=boot:///vmlinuz-linux-cachyos
 INITRD_PATH=boot:///intel-ucode.img
@@ -56,4 +57,4 @@ CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME root
 EOF
 
 echo
-echo "Bootloader installation complete."
+echo "Bootloader installation completed."
