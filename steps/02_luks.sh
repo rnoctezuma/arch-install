@@ -43,6 +43,7 @@ echo "Creating LUKS2 container..."
 
 cryptsetup luksFormat \
   --type luks2 \
+  --label cryptroot \
   --cipher aes-xts-plain64 \
   --key-size 512 \
   --hash sha512 \
