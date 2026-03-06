@@ -30,6 +30,7 @@ cat <<EOF > /mnt/boot/limine.conf
 TIMEOUT=1
 INTERFACE_RESOLUTION=auto
 QUIET=yes
+EDITOR_ENABLED=no
 
 :Arch Linux (CachyOS NVIDIA Kernel)
 PROTOCOL=linux
