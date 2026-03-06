@@ -52,9 +52,6 @@ pacstrap /mnt \
   btrfs-progs \
   networkmanager \
   sudo \
-  nano \
-  git \
-  reflector \
   intel-ucode
 
 echo
