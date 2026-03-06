@@ -11,14 +11,13 @@ The assumption is that a laptop is being used, intended to connect to the Intern
   1. iwctl
   2. device list
 
-```markdown
-## Wi-Fi Setup (iwd)
+    output example:
+    
+      Devices
+      ----------------------------------------------------------------
+      Name   Address            Powered   Adapter   Mode
+      ----------------------------------------------------------------
+      wlan0  28:0c:50:a6:86:32  off       phy0      station
 
-Check available wireless devices:
-
-```bash
-iwctl device list
-(output example):
-      
-iwctl station <device> connect <SSID>
+    NOTE: The Wi-Fi adapter is detected as `wlan0` but currently powered off.
 ```
