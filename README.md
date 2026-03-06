@@ -8,8 +8,11 @@ Make bootable USB using [balenaEtcher](https://etcher.balena.io/#download-etcher
 The assumption is that a laptop is being used, intended to connect to the Internet via a wireless connection.
 
 ```sh
-  1. iwctl
-  2. device list
+  1. rfkill unblock all
+  2. rfkill list
+    - check Soft blocked & Hard blocked = no
+  3. iwctl
+  4. device list
 
     output example:
     
@@ -20,4 +23,7 @@ The assumption is that a laptop is being used, intended to connect to the Intern
       wlan0  28:0c:50:a6:86:32  off       phy0      station
 
     NOTE: The Wi-Fi adapter is detected as `wlan0` but currently powered off.
+
+  5. station <device> connect <SSID>
+  6. Ctrl + C -> check internet connection: ping -c 3 archlinux.org
 ```
