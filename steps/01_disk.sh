@@ -52,3 +52,4 @@ sleep 2
 echo
 echo "Result:"
 lsblk "$DISK"
+echo "$DISK" > /tmp/arch_disk
