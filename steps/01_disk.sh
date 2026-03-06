@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 echo "===================================="
 echo "Arch Installer - Disk Partitioning"
@@ -42,7 +42,9 @@ parted -s "$DISK" set 1 esp on
 echo
 echo "Creating ROOT partition..."
 
-parted -s "$DISK" mkpart ROOT btrfs 2049MiB 100%
+parted -s "$DISK" mkpart ROOT 2049MiB 100%
+
+partprobe "$DISK"
 
 echo
 echo "Partitioning complete."
@@ -52,4 +54,5 @@ sleep 2
 echo
 echo "Result:"
 lsblk "$DISK"
+
 echo "$DISK" > /tmp/arch_disk
