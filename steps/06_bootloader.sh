@@ -31,29 +31,29 @@ TIMEOUT=1
 INTERFACE_RESOLUTION=auto
 QUIET=yes
 
-:Arch Linux (CachyOS Kernel)
+:Arch Linux (CachyOS NVIDIA Kernel)
 PROTOCOL=linux
-KERNEL_PATH=boot:///vmlinuz-linux-cachyos
+KERNEL_PATH=boot:///vmlinuz-linux-cachyos-nvidia
 INITRD_PATH=boot:///intel-ucode.img
-INITRD_PATH=boot:///initramfs-linux-cachyos.img
+INITRD_PATH=boot:///initramfs-linux-cachyos-nvidia.img
 
 CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0
 
 :Arch Linux (Fallback Initramfs)
 PROTOCOL=linux
-KERNEL_PATH=boot:///vmlinuz-linux-cachyos
+KERNEL_PATH=boot:///vmlinuz-linux-cachyos-nvidia
 INITRD_PATH=boot:///intel-ucode.img
-INITRD_PATH=boot:///initramfs-linux-cachyos-fallback.img
+INITRD_PATH=boot:///initramfs-linux-cachyos-nvidia-fallback.img
 
 CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=@ rw
 
 :Arch Linux (BTRFS Snapshot)
 PROTOCOL=linux
-KERNEL_PATH=boot:///vmlinuz-linux-cachyos
+KERNEL_PATH=boot:///vmlinuz-linux-cachyos-nvidia
 INITRD_PATH=boot:///intel-ucode.img
-INITRD_PATH=boot:///initramfs-linux-cachyos.img
+INITRD_PATH=boot:///initramfs-linux-cachyos-nvidia.img
 
-CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=@snapshots rw
+CMDLINE=root=/dev/mapper/$MAPPER_NAME rd.luks.name=$CRYPT_UUID=$MAPPER_NAME rootflags=subvol=.snapshots rw
 EOF
 
 echo
