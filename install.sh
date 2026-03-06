@@ -5,6 +5,18 @@ echo "================================="
 echo "Arch Linux Automated Installer"
 echo "================================="
 
+# Ensure running as root
+if [[ $EUID -ne 0 ]]; then
+  echo "This installer must be run as root."
+  exit 1
+fi
+
+# Ensure /mnt exists
+if [[ ! -d /mnt ]]; then
+  echo "/mnt directory not found."
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 steps=(
@@ -21,20 +33,42 @@ for step in "${steps[@]}"; do
   echo "Running $step"
   echo "---------------------------------"
 
+  STEP_PATH="$SCRIPT_DIR/steps/$step"
+
+  if [[ ! -f "$STEP_PATH" ]]; then
+    echo "Step file not found: $STEP_PATH"
+    exit 1
+  fi
+
   if [[ "$step" == "05_system_config.sh" ]]; then
-      cp "$SCRIPT_DIR/steps/$step" /mnt/root/
+
+      # Fix DNS inside chroot (important for pacman)
+      cp /etc/resolv.conf /mnt/etc/resolv.conf
+
+      # Copy step into new system
+      cp "$STEP_PATH" /mnt/root/
+
+      # Execute inside installed system
       arch-chroot /mnt bash "/root/$step"
+
+      # Remove installer script from system
       rm /mnt/root/$step
+
   else
-      bash "$SCRIPT_DIR/steps/$step"
+      bash "$STEP_PATH"
   fi
 
   echo
   echo "$step completed."
+
 done
 
 echo
 echo "================================="
 echo "INSTALLATION FINISHED"
-echo "You can now reboot."
 echo "================================="
+echo
+echo "You can now reboot:"
+echo
+echo "    reboot"
+echo
