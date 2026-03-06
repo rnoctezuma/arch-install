@@ -58,3 +58,4 @@ EOF
 
 echo
 echo "Bootloader installation completed."
+ls -lh /mnt/boot
