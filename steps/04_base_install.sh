@@ -55,7 +55,7 @@ pacstrap /mnt \
 echo
 echo "Generating fstab..."
 
-genfstab -U /mnt >> /mnt/etc/fstab
+genfstab -U /mnt > /mnt/etc/fstab
 
 echo
 echo "Generated fstab:"
