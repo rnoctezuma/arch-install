@@ -5,10 +5,8 @@ echo "===================================="
 echo "Arch Installer - BTRFS Setup"
 echo "===================================="
 
-# Ensure clean mount point
 umount -R /mnt 2>/dev/null || true
 
-# Check 02_luks.sh step was completed successfully
 if [ ! -f /tmp/arch_mapper ]; then
     echo "LUKS mapper not found. Run 02_luks.sh first."
     exit 1
@@ -22,8 +20,7 @@ if [ ! -b "$DEVICE" ]; then
     exit 1
 fi
 
-# Ensure btrfs tools exist
-command -v mkfs.btrfs >/dev/null || pacman -Sy --noconfirm btrfs-progs
+command -v mkfs.btrfs >/dev/null || pacman -S --noconfirm btrfs-progs
 
 echo
 echo "Creating BTRFS filesystem..."
@@ -58,10 +55,23 @@ mount -o $BTRFS_OPTS,subvol=@ "$DEVICE" /mnt
 
 mkdir -p /mnt/{home,var/log,var/cache,.snapshots,boot}
 
-mount -o noatime,compress=zstd,ssd,commit=120,subvol=@home "$DEVICE" /mnt/home
-mount -o noatime,compress=zstd,ssd,commit=120,subvol=@log "$DEVICE" /mnt/var/log
-mount -o noatime,compress=zstd,ssd,commit=120,subvol=@cache "$DEVICE" /mnt/var/cache
-mount -o noatime,compress=zstd,ssd,commit=120,subvol=@snapshots "$DEVICE" /mnt/.snapshots
+mount -o $BTRFS_OPTS,subvol=@home "$DEVICE" /mnt/home
+mount -o $BTRFS_OPTS,subvol=@log "$DEVICE" /mnt/var/log
+mount -o $BTRFS_OPTS,subvol=@cache "$DEVICE" /mnt/var/cache
+mount -o $BTRFS_OPTS,subvol=@snapshots "$DEVICE" /mnt/.snapshots
+
+echo
+echo "Mounting EFI partition..."
+
+DISK=$(cat /tmp/arch_disk)
+EFI_PART="${DISK}p1"
+
+if [[ "$DISK" != *"nvme"* ]]; then
+    EFI_PART="${DISK}1"
+fi
+
+mkfs.fat -F32 "$EFI_PART"
+mount "$EFI_PART" /mnt/boot
 
 echo
 echo "Subvolumes created:"
