@@ -70,7 +70,9 @@ if [[ "$DISK" != *"nvme"* ]]; then
     EFI_PART="${DISK}1"
 fi
 
-mkfs.fat -F32 "$EFI_PART"
+command -v mkfs.fat >/dev/null || pacman -S --noconfirm dosfstools
+
+mkfs.fat -F32 -n EFI "$EFI_PART"
 mount "$EFI_PART" /mnt/boot
 
 echo
@@ -80,4 +82,4 @@ btrfs subvolume list /mnt
 echo
 echo "BTRFS layout ready."
 
-lsblk
+lsblk -f
