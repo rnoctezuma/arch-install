@@ -22,6 +22,8 @@ steps_chroot=(
   06_bootloader.sh
   07_uefi_entry.sh
   08_snapshot_boot_entries.sh
+  09_snapper_setup.sh
+  10_snapper_limine_hook.sh
 )
 
 # ---- live steps ----
