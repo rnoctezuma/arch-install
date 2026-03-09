@@ -3,23 +3,12 @@ set -euo pipefail
 
 # ==============================================================================
 # Step 02: LUKS2 encryption on ROOT partition
+# Reads:  /tmp/arch_disk
+# Writes: /tmp/arch_mapper, /tmp/arch_root_part
 #
-# Contract:
-#   - reads disk path from /tmp/arch_disk (written by step 01)
-#   - detects ROOT partition:
-#       nvme*/mmcblk*  -> ${DISK}p2
-#       others         -> ${DISK}2
-#   - creates LUKS2 container on ROOT partition
-#   - opens it as /dev/mapper/<mapper>
-#   - writes:
-#       /tmp/arch_mapper     (mapper name only, e.g. cryptroot)
-#       /tmp/arch_root_part  (root partition path, e.g. /dev/nvme0n1p2)
-#
-# Crypto choices:
-#   - LUKS2 + Argon2id
-#   - pbkdf-memory default is 256 MiB (262144 KiB) to avoid OOM/slow unlock
-#     while still being strong. cryptsetup notes PBKDF alloc uses real RAM. (see
-#     cryptsetup-luksFormat(8))
+# Notes:
+# - cryptsetup benchmarks PBKDF; requested pbkdf-memory is a target/max and may
+#   be lowered to hit iter-time (documented by cryptsetup).
 # ==============================================================================
 
 TMP_ARCH_DISK="/tmp/arch_disk"
@@ -35,9 +24,7 @@ die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
 
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
-}
+require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
   local ec=$?
@@ -52,26 +39,19 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit EXIT
 
-[[ ${EUID:-0} -eq 0 ]] || die "This script must be run as root."
+[[ ${EUID:-0} -eq 0 ]] || die "Run as root."
 
 require_cmd lsblk
 require_cmd cryptsetup
 require_cmd blkid
 require_cmd sync
 
-if [[ ! -f "$TMP_ARCH_DISK" ]]; then
-  die "Disk info not found at $TMP_ARCH_DISK. Run step 01 first."
-fi
-
+[[ -f "$TMP_ARCH_DISK" ]] || die "Missing $TMP_ARCH_DISK (run step 01)."
 DISK="$(<"$TMP_ARCH_DISK")"
-[[ -n "$DISK" ]] || die "$TMP_ARCH_DISK is empty."
-[[ -b "$DISK" ]] || die "Disk not found or not a block device: $DISK"
+[[ -b "$DISK" ]] || die "Disk not found: $DISK"
 
-if command -v udevadm >/dev/null 2>&1; then
-  udevadm settle || true
-fi
+command -v udevadm >/dev/null 2>&1 && udevadm settle || true
 
-# Detect root partition (must match step01 layout)
 if [[ "$DISK" == *"nvme"* || "$DISK" == *"mmcblk"* ]]; then
   ROOT_PART="${DISK}p2"
 else
@@ -79,23 +59,22 @@ else
 fi
 
 info "Disk: $DISK"
-info "Using root partition: $ROOT_PART"
+info "Root partition: $ROOT_PART"
+[[ -b "$ROOT_PART" ]] || die "Root partition not found: $ROOT_PART"
 
-[[ -b "$ROOT_PART" ]] || die "Root partition not found: $ROOT_PART (check step 01)."
-
-# Refuse to work if the partition is mounted or used as swap (very unsafe).
+# Safety: refuse if mounted or swap
 if grep -qE "^${ROOT_PART} " /proc/mounts 2>/dev/null; then
-  die "Root partition appears mounted. Unmount it before continuing: $ROOT_PART"
+  die "Root partition appears mounted: $ROOT_PART"
 fi
 if grep -qE "^${ROOT_PART} " /proc/swaps 2>/dev/null; then
-  die "Root partition appears used as swap. Disable swap before continuing: $ROOT_PART"
+  die "Root partition appears used as swap: $ROOT_PART"
 fi
 
-# Choose a unique mapper name (default 'cryptroot' to keep your later scripts simple)
+# Mapper name: default cryptroot, but pick a free one if needed.
 base="cryptroot"
 MAPPER="$base"
 if [[ -e "/dev/mapper/$MAPPER" ]]; then
-  warn "/dev/mapper/$MAPPER already exists; choosing a unique mapper name."
+  warn "/dev/mapper/$MAPPER exists; selecting a free mapper name."
   for i in {1..9}; do
     if [[ ! -e "/dev/mapper/${base}${i}" ]]; then
       MAPPER="${base}${i}"
@@ -103,25 +82,20 @@ if [[ -e "/dev/mapper/$MAPPER" ]]; then
     fi
   done
 fi
-[[ -e "/dev/mapper/$MAPPER" ]] && die "Could not find free mapper name (cryptroot..cryptroot9)."
+[[ ! -e "/dev/mapper/$MAPPER" ]] || die "No free mapper name cryptroot..cryptroot9"
 
-# Detect existing LUKS header
 if cryptsetup isLuks "$ROOT_PART" >/dev/null 2>&1; then
   warn "Existing LUKS header detected on $ROOT_PART."
-  warn "Continuing will DESTROY the current LUKS container."
-  read -rp "Type YES to continue anyway: " CONFIRM_LUKS
+  read -rp "Type YES to overwrite it (DESTROYS DATA): " CONFIRM_LUKS
   [[ "${CONFIRM_LUKS:-}" == "YES" ]] || die "Aborted by user."
 fi
 
-# PBKDF tuning
 PBKDF_MEMORY_KIB="${PBKDF_MEMORY_KIB:-262144}"   # 256 MiB
-ITER_TIME_MS="${ITER_TIME_MS:-2000}"             # target ~2s on this machine
+ITER_TIME_MS="${ITER_TIME_MS:-2000}"            # ~2s target
 PARALLEL=4
 if command -v nproc >/dev/null 2>&1; then
   cores="$(nproc || echo 4)"
-  if [[ "$cores" =~ ^[0-9]+$ ]] && (( cores > 0 )); then
-    PARALLEL="$cores"
-  fi
+  [[ "$cores" =~ ^[0-9]+$ ]] && (( cores > 0 )) && PARALLEL="$cores"
 fi
 (( PARALLEL > 4 )) && PARALLEL=4
 (( PARALLEL < 1 )) && PARALLEL=1
@@ -129,14 +103,14 @@ fi
 echo
 warn "About to encrypt: $ROOT_PART"
 echo "LUKS settings:"
-echo "  type:            luks2"
-echo "  cipher:          aes-xts-plain64"
-echo "  key-size:        512"
-echo "  hash:            sha512"
-echo "  pbkdf:           argon2id"
-echo "  pbkdf-memory:    ${PBKDF_MEMORY_KIB} KiB (default 256 MiB)"
-echo "  pbkdf-parallel:  ${PARALLEL}"
-echo "  iter-time:       ${ITER_TIME_MS} ms (benchmark target)"
+echo " type          : luks2"
+echo " cipher        : aes-xts-plain64"
+echo " key-size      : 512 (XTS => AES-256 effective)"
+echo " hash          : sha512"
+echo " pbkdf         : argon2id"
+echo " pbkdf-memory  : ${PBKDF_MEMORY_KIB} KiB"
+echo " pbkdf-parallel: ${PARALLEL}"
+echo " iter-time     : ${ITER_TIME_MS} ms"
 echo
 read -rp "Type YES to format and encrypt (ALL DATA LOST): " CONFIRM
 [[ "${CONFIRM:-}" == "YES" ]] || die "Aborted by user."
@@ -156,23 +130,18 @@ cryptsetup luksFormat \
   "$ROOT_PART"
 
 sync
-
-info "Opening encrypted container as /dev/mapper/$MAPPER ..."
+info "Opening as /dev/mapper/$MAPPER ..."
 cryptsetup open "$ROOT_PART" "$MAPPER"
 OPENED=1
-
 sync
-if command -v udevadm >/dev/null 2>&1; then
-  udevadm settle || true
-fi
+command -v udevadm >/dev/null 2>&1 && udevadm settle || true
 
 printf '%s\n' "$MAPPER" > "$TMP_ARCH_MAPPER"
 printf '%s\n' "$ROOT_PART" > "$TMP_ARCH_ROOT_PART"
 sync
 
 info "State written:"
-echo "  $TMP_ARCH_MAPPER = $MAPPER"
-echo "  $TMP_ARCH_ROOT_PART = $ROOT_PART"
+echo " $TMP_ARCH_MAPPER   = $MAPPER"
+echo " $TMP_ARCH_ROOT_PART= $ROOT_PART"
 echo
-
 lsblk -p -o NAME,SIZE,TYPE,FSTYPE,LABEL,MOUNTPOINTS "$DISK"
