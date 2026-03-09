@@ -1,44 +1,53 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+
+LOG_DIR="/tmp/arch-install-logs"
+LOG_FILE="${LOG_DIR}/install-$(date +%Y%m%d-%H%M%S).log"
+
+mkdir -p "$LOG_DIR"
+
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
 
-require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
+on_error() {
+  local exit_code=$?
+  local line_no=$1
+  local cmd="${2:-unknown}"
+  echo
+  warn "Installer failed."
+  warn "Exit code : $exit_code"
+  warn "Line      : $line_no"
+  warn "Command   : $cmd"
+  warn "Log file  : $LOG_FILE"
+  echo
+  exit "$exit_code"
+}
+
+trap 'on_error $LINENO "$BASH_COMMAND"' ERR
 
 cleanup_on_exit() {
   local ec=$?
-  # Best-effort cleanup of copied scripts in chroot root.
-  if [[ -d /mnt/root ]]; then
-    rm -f /mnt/root/01_disk.sh \
-          /mnt/root/02_luks.sh \
-          /mnt/root/03_btrfs.sh \
-          /mnt/root/04_base_install.sh \
-          /mnt/root/05_system_config.sh \
-          /mnt/root/06_bootloader.sh \
-          /mnt/root/07_uefi_entry.sh \
-          /mnt/root/08_snapshot_boot_entries.sh \
-          /mnt/root/09_snapper_setup.sh \
-          /mnt/root/10_snapper_limine_hook.sh 2>/dev/null || true
-  fi
-  if [[ $ec -ne 0 ]]; then
-    warn "Installer failed (exit code $ec)."
+  if [[ $ec -eq 0 ]]; then
+    info "Installer finished successfully."
+    info "Log file: $LOG_FILE"
   fi
 }
 trap cleanup_on_exit EXIT
 
-[[ ${EUID:-0} -eq 0 ]] || die "Run as root."
-[[ -d /mnt ]] || die "/mnt not found."
+echo "================================="
+echo "Arch Linux Automated Installer"
+echo "================================="
+echo "Log file: $LOG_FILE"
+echo
 
-require_cmd bash
-require_cmd arch-chroot
-require_cmd cp
-require_cmd mkdir
+[[ ${EUID:-0} -eq 0 ]] || die "This installer must be run as root."
+[[ -d /mnt ]] || die "/mnt directory not found."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Live-ISO steps (operate on /dev, /mnt and build the target filesystem)
 steps_live=(
   01_disk.sh
   02_luks.sh
@@ -46,7 +55,6 @@ steps_live=(
   04_base_install.sh
 )
 
-# In-chroot steps (operate on the installed system root)
 steps_chroot=(
   05_system_config.sh
   06_bootloader.sh
@@ -56,50 +64,72 @@ steps_chroot=(
   10_snapper_limine_hook.sh
 )
 
-echo "================================="
-echo "Arch Linux Automated Installer"
-echo "================================="
+run_step_live() {
+  local step="$1"
+  local step_path="$SCRIPT_DIR/steps/$step"
 
-# ---- Run live steps -----------------------------------------------------------
-for step in "${steps_live[@]}"; do
-  STEP_PATH="$SCRIPT_DIR/steps/$step"
-  [[ -f "$STEP_PATH" ]] || die "Step file not found: $STEP_PATH"
+  [[ -f "$step_path" ]] || die "Step file not found: $step_path"
 
   echo
-  info "Running $step (live ISO)"
-  bash "$STEP_PATH"
+  echo "---------------------------------"
+  info "RUN LIVE STEP: $step"
+  echo "---------------------------------"
+
+  bash "$step_path"
+
+  info "STEP COMPLETED: $step"
+}
+
+run_step_chroot() {
+  local step="$1"
+  local step_path="$SCRIPT_DIR/steps/$step"
+
+  [[ -f "$step_path" ]] || die "Step file not found: $step_path"
+
+  echo
+  echo "---------------------------------"
+  info "RUN CHROOT STEP: $step"
+  echo "---------------------------------"
+
+  cp -f "$step_path" "/mnt/root/$step"
+  chmod +x "/mnt/root/$step"
+
+  info "Copied to /mnt/root/$step"
+
+  arch-chroot /mnt bash -x "/root/$step"
+
+  info "STEP COMPLETED: $step"
+}
+
+info "Preparing target directories..."
+mkdir -p /mnt/root /mnt/tmp /mnt/etc
+
+for step in "${steps_live[@]}"; do
+  run_step_live "$step"
 done
 
-# ---- Copy /tmp state into chroot /tmp ----------------------------------------
-mkdir -p /mnt/tmp
-
+info "Copying installer state files into target system..."
 for f in /tmp/arch_disk /tmp/arch_mapper /tmp/arch_root_part; do
-  [[ -f "$f" ]] || die "Missing state file: $f (previous step failed?)"
+  [[ -f "$f" ]] || die "Missing state file: $f"
   cp -f "$f" "/mnt/tmp/$(basename "$f")"
+  info "Copied $f -> /mnt/tmp/"
 done
 
-# Ensure DNS works inside chroot (arch-chroot usually helps, but do it explicitly)
 if [[ -f /etc/resolv.conf ]]; then
-  cp -L /etc/resolv.conf /mnt/etc/resolv.conf || true
+  info "Copying resolv.conf into target..."
+  cp -L /etc/resolv.conf /mnt/etc/resolv.conf
 fi
 
-# ---- Copy chroot step scripts ONCE (kept until end) --------------------------
-mkdir -p /mnt/root
 for step in "${steps_chroot[@]}"; do
-  STEP_PATH="$SCRIPT_DIR/steps/$step"
-  [[ -f "$STEP_PATH" ]] || die "Step file not found: $STEP_PATH"
-  cp -f "$STEP_PATH" "/mnt/root/$step"
-done
-
-# ---- Run chroot steps ---------------------------------------------------------
-for step in "${steps_chroot[@]}"; do
-  echo
-  info "Running $step (inside installed system)"
-  arch-chroot /mnt bash "/root/$step"
+  run_step_chroot "$step"
 done
 
 echo
 echo "================================="
 echo "INSTALLATION FINISHED"
 echo "================================="
-echo "You can now reboot."
+echo
+echo "You can now reboot:"
+echo
+echo "    reboot"
+echo
