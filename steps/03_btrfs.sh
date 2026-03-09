@@ -3,21 +3,17 @@ set -euo pipefail
 
 # ==============================================================================
 # Step 03: Btrfs filesystem + subvolumes + mounts + format/mount ESP
-#
 # Requires:
-#   - /tmp/arch_mapper from step 02
-#   - /tmp/arch_disk from step 01
+#   /tmp/arch_mapper (from step 02)
+#   /tmp/arch_disk   (from step 01)
 #
-# Creates Btrfs on /dev/mapper/<mapper> and subvolumes:
+# Subvolumes:
 #   @, @home, @log, @cache, @snapshots
 #
-# Mount options (as requested):
+# Mount options:
 #   noatime,compress=zstd:1,space_cache=v2,discard=async,commit=120
 #
-# NOTE ABOUT DISCARD/TRIM:
-#   Btrfs 'discard=async' only helps if discards can reach the NVMe.
-#   For LUKS, you must explicitly allow discards (e.g. via kernel cmdline
-#   rd.luks.options=<UUID>=discard or allow-discards depending on your stack).
+# Note: discard/trim through LUKS requires explicit allow-discards policy.
 # ==============================================================================
 
 TMP_ARCH_DISK="/tmp/arch_disk"
@@ -32,9 +28,7 @@ die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
 
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
-}
+require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
   local ec=$?
@@ -46,14 +40,13 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit EXIT
 
-[[ ${EUID:-0} -eq 0 ]] || die "This script must be run as root."
+[[ ${EUID:-0} -eq 0 ]] || die "Run as root."
 
 require_cmd mount
 require_cmd umount
 require_cmd lsblk
 require_cmd sync
 
-# Ensure tools exist; install if missing (Arch ISO normally has them).
 if ! command -v mkfs.btrfs >/dev/null 2>&1; then
   require_cmd pacman
   info "Installing btrfs-progs..."
@@ -71,18 +64,16 @@ require_cmd mkfs.fat
 
 umount -R /mnt >/dev/null 2>&1 || true
 
-[[ -f "$TMP_ARCH_MAPPER" ]] || die "Mapper info not found ($TMP_ARCH_MAPPER). Run step 02 first."
+[[ -f "$TMP_ARCH_MAPPER" ]] || die "Missing $TMP_ARCH_MAPPER (run step 02)."
 MAPPER="$(<"$TMP_ARCH_MAPPER")"
 [[ -n "$MAPPER" ]] || die "$TMP_ARCH_MAPPER is empty."
-
 DEVICE="/dev/mapper/$MAPPER"
 [[ -b "$DEVICE" ]] || die "Mapper device not found: $DEVICE"
 
-[[ -f "$TMP_ARCH_DISK" ]] || die "Disk info not found ($TMP_ARCH_DISK). Run step 01 first."
+[[ -f "$TMP_ARCH_DISK" ]] || die "Missing $TMP_ARCH_DISK (run step 01)."
 DISK="$(<"$TMP_ARCH_DISK")"
 [[ -b "$DISK" ]] || die "Disk not found: $DISK"
 
-# Detect EFI partition
 if [[ "$DISK" == *"nvme"* || "$DISK" == *"mmcblk"* ]]; then
   EFI_PART="${DISK}p1"
 else
@@ -107,13 +98,13 @@ sync
 BTRFS_OPTS="noatime,compress=zstd:1,space_cache=v2,discard=async,commit=120"
 
 info "Mounting final subvolume layout..."
-mount -o "${BTRFS_OPTS},subvol=@"" " "$DEVICE" /mnt
+mount -o "${BTRFS_OPTS},subvol=@" "$DEVICE" /mnt
 
 mkdir -p /mnt/home /mnt/var/log /mnt/var/cache /mnt/.snapshots /mnt/boot
 
-mount -o "${BTRFS_OPTS},subvol=@home" "$DEVICE" /mnt/home
-mount -o "${BTRFS_OPTS},subvol=@log" "$DEVICE" /mnt/var/log
-mount -o "${BTRFS_OPTS},subvol=@cache" "$DEVICE" /mnt/var/cache
+mount -o "${BTRFS_OPTS},subvol=@home"      "$DEVICE" /mnt/home
+mount -o "${BTRFS_OPTS},subvol=@log"       "$DEVICE" /mnt/var/log
+mount -o "${BTRFS_OPTS},subvol=@cache"     "$DEVICE" /mnt/var/cache
 mount -o "${BTRFS_OPTS},subvol=@snapshots" "$DEVICE" /mnt/.snapshots
 
 info "Formatting EFI partition as FAT32 and mounting at /mnt/boot..."
@@ -121,7 +112,6 @@ mkfs.fat -F32 -n EFI "$EFI_PART"
 mount "$EFI_PART" /mnt/boot
 
 sync
-
 echo
 info "Subvolumes:"
 btrfs subvolume list /mnt || true
