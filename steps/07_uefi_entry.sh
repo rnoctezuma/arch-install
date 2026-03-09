@@ -13,6 +13,15 @@ warn(){ echo "WARNING: $*" >&2; }
 
 require_cmd(){ command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
+cleanup_on_exit() {
+  local ec=$?
+  if [[ $ec -ne 0 ]]; then
+    warn "Step 07 failed (exit code $ec)."
+  fi
+  return 0
+}
+trap cleanup_on_exit EXIT
+
 [[ ${EUID:-0} -eq 0 ]] || die "Run as root."
 [[ -f /etc/arch-release ]] || die "Run inside installed system (chroot)."
 [[ -d /sys/firmware/efi/efivars ]] || die "UEFI mode required."
