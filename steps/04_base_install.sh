@@ -3,36 +3,24 @@ set -euo pipefail
 
 # ==============================================================================
 # Step 04: Base Arch installation into /mnt
-#
-# Requirements:
-#   - /mnt must be mounted (Btrfs subvol @ mounted as /mnt, ESP mounted as /mnt/boot)
-#
-# Actions:
-#   - Ensure network is up
-#   - Update archlinux-keyring (live ISO)
-#   - Install reflector (live ISO) and select mirrors (VN/SG/JP/KR)
-#   - pacstrap base system packages into /mnt
-#   - Optimize pacman.conf INSIDE the installed system (/mnt/etc/pacman.conf)
-#   - genfstab -U to /mnt/etc/fstab and print it
+# - uses pacstrap + genfstab
+# - mirror selection via reflector (VN/SG/JP/KR)
+# - modifies /mnt/etc/pacman.conf (Color, ParallelDownloads, ILoveCandy)
 # ==============================================================================
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
 
-require_cmd() {
-  command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
-}
+require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
   local ec=$?
-  if [[ $ec -ne 0 ]]; then
-    warn "Step 04 failed (exit code $ec)."
-  fi
+  [[ $ec -ne 0 ]] && warn "Step 04 failed (exit code $ec)."
 }
 trap cleanup_on_exit EXIT
 
-[[ ${EUID:-0} -eq 0 ]] || die "This script must be run as root."
+[[ ${EUID:-0} -eq 0 ]] || die "Run as root."
 
 require_cmd mountpoint
 require_cmd pacman
@@ -40,26 +28,15 @@ require_cmd pacstrap
 require_cmd genfstab
 require_cmd sync
 
-if ! mountpoint -q /mnt; then
-  die "/mnt is not mounted. Run steps 01-03 first."
-fi
+mountpoint -q /mnt || die "/mnt is not mounted (run steps 01-03)."
 
-# Minimal network check: route + ping/curl
 info "Checking network connectivity..."
-if command -v ip >/dev/null 2>&1; then
-  ip route >/dev/null 2>&1 || true
-fi
-
 NET_OK=0
-if command -v ping >/dev/null 2>&1; then
-  if ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
-    NET_OK=1
-  fi
+if command -v ping >/dev/null 2>&1 && ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
+  NET_OK=1
 fi
 if [[ $NET_OK -eq 0 ]] && command -v curl >/dev/null 2>&1; then
-  if curl -fsSLI --max-time 5 https://archlinux.org >/dev/null 2>&1; then
-    NET_OK=1
-  fi
+  curl -fsSLI --max-time 5 https://archlinux.org >/dev/null 2>&1 && NET_OK=1 || true
 fi
 [[ $NET_OK -eq 1 ]] || die "Network appears offline. Configure Wi-Fi (iwctl) or Ethernet, then re-run."
 
@@ -70,7 +47,6 @@ info "Installing reflector (live ISO)..."
 pacman -S --noconfirm --needed reflector
 
 info "Selecting fastest mirrors (VN/SG/JP/KR)..."
-# If reflector fails (rare), keep current mirrorlist and continue.
 if ! reflector \
   --country Vietnam,Singapore,Japan,South\ Korea \
   --age 12 \
@@ -78,7 +54,7 @@ if ! reflector \
   --sort rate \
   --latest 20 \
   --save /etc/pacman.d/mirrorlist; then
-  warn "Reflector failed; continuing with current /etc/pacman.d/mirrorlist."
+  warn "Reflector failed; continuing with current mirrorlist."
 fi
 
 info "Installing base system into /mnt..."
@@ -108,5 +84,4 @@ info "Generated /mnt/etc/fstab:"
 echo "--------------------------------"
 cat /mnt/etc/fstab
 echo "--------------------------------"
-echo
 info "Base system installation complete."
