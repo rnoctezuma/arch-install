@@ -20,6 +20,8 @@ steps_live=(
 steps_chroot=(
   05_system_config.sh
   06_bootloader.sh
+  07_uefi_entry.sh
+  08_snapshot_boot_entries.sh
 )
 
 # ---- live steps ----
