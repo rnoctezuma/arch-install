@@ -2,136 +2,202 @@
 set -euo pipefail
 
 # ==============================================================================
-# Step 08: Snapshot-aware Limine boot entry generator (production)
-# Runs inside arch-chroot
-# Idempotent, safe, newest-first ordering
+# Step 08: Snapshot-aware Limine boot entry generator (Limine v10)
+# Runs inside installed system (chroot during install, and later at runtime).
+#
+# Idempotency:
+# - Rewrites only the block between:
+#   # --- SNAPSHOT AUTO START ---
+#   # --- SNAPSHOT AUTO END ---
+#
+# IMPORTANT: /tmp/arch_* files do NOT survive reboot.
+# This script therefore supports:
+#   - using /tmp/arch_* when present (install-time)
+#   - fallback auto-detection at runtime via findmnt + cryptsetup + blkid
 # ==============================================================================
 
 die(){ echo "ERROR: $*" >&2; exit 1; }
 info(){ echo "==> $*"; }
 warn(){ echo "WARNING: $*" >&2; }
 
+require_cmd(){ command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
+
+DRYRUN=0
+VERBOSE=0
+KEEP_N=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n|--dry-run) DRYRUN=1; shift ;;
+    -v|--verbose) VERBOSE=1; shift ;;
+    --keep) KEEP_N="${2:-}"; shift 2 ;;
+    *) die "Unknown argument: $1" ;;
+  esac
+done
+
+logv(){ [[ $VERBOSE -eq 1 ]] && info "$*"; }
+
 cleanup_on_exit(){
-    local ec=$?
-    if [[ $ec -ne 0 ]]; then
-        warn "Step 08 failed (exit code $ec)."
-    fi
+  local ec=$?
+  [[ $ec -ne 0 ]] && warn "Step 08 failed (exit code $ec)."
 }
 trap cleanup_on_exit EXIT
 
-# ------------------------------------------------------------------------------
-# Sanity checks
-# ------------------------------------------------------------------------------
+[[ ${EUID:-0} -eq 0 ]] || die "Run as root."
+[[ -f /etc/arch-release ]] || die "Run inside installed system."
+[[ -d /sys/firmware/efi/efivars ]] || die "UEFI mode required."
 
-[[ $EUID -eq 0 ]] || die "Must be run as root"
-[[ -f /etc/arch-release ]] || die "Not inside installed system"
+require_cmd sed
+require_cmd awk
+require_cmd find
+require_cmd sort
+require_cmd head
+require_cmd mountpoint
 
-mountpoint -q /boot || die "/boot not mounted"
+mountpoint -q /boot || die "/boot is not mounted (ESP missing)."
 
 CONF="/boot/EFI/BOOT/limine.conf"
-[[ -f "$CONF" ]] || die "limine.conf not found at $CONF"
+[[ -f "$CONF" ]] || die "limine.conf not found: $CONF"
 
-[[ -f /tmp/arch_mapper ]] || die "Missing /tmp/arch_mapper"
-[[ -f /tmp/arch_root_part ]] || die "Missing /tmp/arch_root_part"
-
-MAPPER="$(< /tmp/arch_mapper)"
-ROOT_PART="$(< /tmp/arch_root_part)"
-
-[[ -b "$ROOT_PART" ]] || die "Root partition not found"
-
-CRYPT_UUID="$(blkid -s UUID -o value "$ROOT_PART" || true)"
-[[ -n "$CRYPT_UUID" ]] || die "Failed to detect LUKS UUID"
-
-# ------------------------------------------------------------------------------
-# Detect kernel + initramfs
-# ------------------------------------------------------------------------------
-
+# ---- Kernel + initramfs detection (use current ESP kernel) --------------------
 pick_kernel() {
-    for f in \
-        vmlinuz-linux-cachyos-nvidia-open \
-        vmlinuz-linux-cachyos-nvidia \
-        vmlinuz-linux-cachyos \
-        vmlinuz-linux
-    do
-        [[ -f "/boot/$f" ]] && { echo "$f"; return 0; }
-    done
-    return 1
+  for f in vmlinuz-linux-cachyos vmlinuz-linux; do
+    [[ -f "/boot/$f" ]] && { echo "$f"; return 0; }
+  done
+  return 1
 }
 
-KERNEL_FILE="$(pick_kernel)" || die "No supported kernel found in /boot"
-
+KERNEL_FILE="$(pick_kernel)" || die "No supported kernel found in /boot."
 PRESET="${KERNEL_FILE#vmlinuz-}"
 INITRAMFS_FILE="initramfs-${PRESET}.img"
-
 [[ -f "/boot/$INITRAMFS_FILE" ]] || die "Missing /boot/$INITRAMFS_FILE"
 
-# Optional microcode
 UCODE_LINE=""
-if [[ -f /boot/intel-ucode.img ]]; then
-    UCODE_LINE="    module_path: boot():/intel-ucode.img"
+[[ -f /boot/intel-ucode.img ]] && UCODE_LINE="    module_path: boot():/intel-ucode.img"
+
+# ---- Mapper + LUKS UUID detection --------------------------------------------
+MAPPER=""
+CRYPT_UUID=""
+
+if [[ -f /tmp/arch_mapper ]]; then
+  MAPPER="$(< /tmp/arch_mapper)"
 fi
 
-# ------------------------------------------------------------------------------
-# Snapshot detection
-# ------------------------------------------------------------------------------
-
-SNAPSHOT_DIR="/.snapshots"
-
-if [[ ! -d "$SNAPSHOT_DIR" ]]; then
-    info "No /.snapshots directory found. Nothing to generate."
-    exit 0
+if [[ -z "${MAPPER:-}" ]]; then
+  require_cmd findmnt
+  src="$(findmnt -no SOURCE / || true)"
+  [[ "$src" == /dev/mapper/* ]] || die "Cannot detect mapper from root mount SOURCE=$src"
+  MAPPER="${src#/dev/mapper/}"
 fi
 
-# Remove previous auto block safely
-sed -i '/# --- SNAPSHOT AUTO START ---/,/# --- SNAPSHOT AUTO END ---/d' "$CONF"
+# Preferred: /tmp/arch_root_part if present (install-time)
+if [[ -f /tmp/arch_root_part ]]; then
+  require_cmd blkid
+  ROOT_PART="$(< /tmp/arch_root_part)"
+  [[ -b "$ROOT_PART" ]] || die "Root partition from /tmp not found: $ROOT_PART"
+  CRYPT_UUID="$(blkid -s UUID -o value "$ROOT_PART" || true)"
+fi
 
-# Collect valid snapshots (Snapper layout)
-mapfile -t SNAP_LIST < <(
-    find "$SNAPSHOT_DIR" -mindepth 1 -maxdepth 1 -type d \
-    -exec test -d "{}/snapshot" \; \
-    -print 2>/dev/null \
+# Fallback runtime: cryptsetup status <mapper> -> underlying device -> blkid UUID
+if [[ -z "${CRYPT_UUID:-}" ]]; then
+  require_cmd cryptsetup
+  require_cmd blkid
+  dev="$(cryptsetup status "$MAPPER" 2>/dev/null | awk -F': ' '/device:/ {print $2; exit}' || true)"
+  [[ -n "${dev:-}" && -b "${dev:-}" ]] || die "Failed to detect underlying LUKS block device for mapper: $MAPPER"
+  CRYPT_UUID="$(blkid -s UUID -o value "$dev" || true)"
+fi
+
+[[ -n "${CRYPT_UUID:-}" ]] || die "Failed to detect LUKS UUID."
+
+CMDLINE_BASE_PREFIX="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
+
+logv "Kernel: $KERNEL_FILE"
+logv "Initramfs: $INITRAMFS_FILE"
+logv "Mapper: $MAPPER"
+logv "LUKS UUID: $CRYPT_UUID"
+
+# ---- Snapper snapshot discovery ----------------------------------------------
+SNAP_BASE=""
+if [[ -d "/.snapshots" ]]; then
+  SNAP_BASE="/.snapshots"
+elif [[ -d "/@snapshots" ]]; then
+  SNAP_BASE="/@snapshots"
+else
+  info "No snapshots directory found (/.snapshots or /@snapshots). Nothing to do."
+  exit 0
+fi
+
+mapfile -t SNAP_IDS < <(
+  find "$SNAP_BASE" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/dev/null \
+    | grep -E '^[0-9]+$' \
     | sort -rV
 )
 
-if [[ ${#SNAP_LIST[@]} -eq 0 ]]; then
-    info "No valid snapshots detected."
-    exit 0
-fi
-
-# ------------------------------------------------------------------------------
-# Generate snapshot entries
-# ------------------------------------------------------------------------------
-
-{
-echo ""
-echo "# --- SNAPSHOT AUTO START ---"
-echo "# Generated automatically. Do not edit manually."
-echo ""
-
-for SNAP in "${SNAP_LIST[@]}"; do
-    ID="$(basename "$SNAP")"
-
-cat <<EOF
-/Arch Linux Snapshot (${ID})
-    protocol: linux
-    kernel_path: boot():/${KERNEL_FILE}
-${UCODE_LINE}
-    module_path: boot():/${INITRAMFS_FILE}
-    cmdline: root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rootflags=subvol=.snapshots/${ID}/snapshot rw quiet
-EOF
-
+# Filter to those that have "snapshot" dir (Snapper layout)
+SNAP_OK=()
+for id in "${SNAP_IDS[@]}"; do
+  [[ -d "${SNAP_BASE}/${id}/snapshot" ]] || continue
+  SNAP_OK+=("$id")
 done
 
-echo "# --- SNAPSHOT AUTO END ---"
-} >> "$CONF"
+if [[ ${#SNAP_OK[@]} -eq 0 ]]; then
+  info "No valid Snapper snapshots found under $SNAP_BASE."
+  # Still clear auto-block so stale entries don’t remain
+  sed -i '/# --- SNAPSHOT AUTO START ---/,/# --- SNAPSHOT AUTO END ---/d' "$CONF"
+  exit 0
+fi
 
+if [[ "$KEEP_N" =~ ^[0-9]+$ ]] && (( KEEP_N > 0 )) && (( ${#SNAP_OK[@]} > KEEP_N )); then
+  SNAP_OK=( "${SNAP_OK[@]:0:KEEP_N}" )
+fi
+
+BLOCK="$(mktemp)"
+NEWCONF="$(mktemp)"
+trap 'rm -f "$BLOCK" "$NEWCONF" >/dev/null 2>&1 || true' EXIT
+
+{
+  echo "# Auto-generated snapshot entries (newest-first)"
+  echo "# Generated by steps/08_snapshot_boot_entries.sh"
+  echo
+  for id in "${SNAP_OK[@]}"; do
+    # Our install created a top-level subvolume named @snapshots mounted at /.snapshots
+    # So rootflags should point to: subvol=@snapshots/<id>/snapshot
+    echo "/Arch Linux (snapshot #${id})"
+    echo "    protocol: linux"
+    echo "    kernel_path: boot():/${KERNEL_FILE}"
+    [[ -n "$UCODE_LINE" ]] && echo "$UCODE_LINE"
+    echo "    module_path: boot():/${INITRAMFS_FILE}"
+    echo "    cmdline: ${CMDLINE_BASE_PREFIX} rootflags=subvol=@snapshots/${id}/snapshot"
+    echo
+  done
+} > "$BLOCK"
+
+START="# --- SNAPSHOT AUTO START ---"
+END="# --- SNAPSHOT AUTO END ---"
+
+if grep -qF "$START" "$CONF" && grep -qF "$END" "$CONF"; then
+  awk -v start="$START" -v end="$END" -v block="$BLOCK" '
+    BEGIN{in=0}
+    $0==start {print; system("cat " block); in=1; next}
+    in && $0==end {print; in=0; next}
+    in {next}
+    {print}
+  ' "$CONF" > "$NEWCONF"
+else
+  cat "$CONF" > "$NEWCONF"
+  {
+    echo
+    echo "$START"
+    cat "$BLOCK"
+    echo "$END"
+  } >> "$NEWCONF"
+fi
+
+if [[ $DRYRUN -eq 1 ]]; then
+  info "Dry-run: would update $CONF with ${#SNAP_OK[@]} snapshot entries."
+  exit 0
+fi
+
+cat "$NEWCONF" > "$CONF"
 sync
-
-# ------------------------------------------------------------------------------
-# Debug output
-# ------------------------------------------------------------------------------
-
-echo
-info "Snapshot entries regenerated successfully."
-info "Total snapshots added: ${#SNAP_LIST[@]}"
-echo
+info "Snapshot entries updated: ${#SNAP_OK[@]} entries written."
