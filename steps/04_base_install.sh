@@ -65,7 +65,8 @@ pacstrap /mnt \
   btrfs-progs \
   networkmanager \
   sudo \
-  intel-ucode
+  intel-ucode \
+  mkinitcpio
 
 info "Optimizing pacman.conf in target system (/mnt/etc/pacman.conf)..."
 TARGET_PACCONF="/mnt/etc/pacman.conf"
