@@ -37,9 +37,12 @@ done
 
 logv(){ [[ $VERBOSE -eq 1 ]] && info "$*"; }
 
-cleanup_on_exit(){
+cleanup_on_exit() {
   local ec=$?
-  [[ $ec -ne 0 ]] && warn "Step 08 failed (exit code $ec)."
+  if [[ $ec -ne 0 ]]; then
+    warn "Step 08 failed (exit code $ec)."
+  fi
+  return 0
 }
 trap cleanup_on_exit EXIT
 
