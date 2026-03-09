@@ -1,85 +1,130 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-echo "===================================="
-echo "Arch Installer - BTRFS Setup"
-echo "===================================="
+# ==============================================================================
+# Step 03: Btrfs filesystem + subvolumes + mounts + format/mount ESP
+#
+# Requires:
+#   - /tmp/arch_mapper from step 02
+#   - /tmp/arch_disk from step 01
+#
+# Creates Btrfs on /dev/mapper/<mapper> and subvolumes:
+#   @, @home, @log, @cache, @snapshots
+#
+# Mount options (as requested):
+#   noatime,compress=zstd:1,space_cache=v2,discard=async,commit=120
+#
+# NOTE ABOUT DISCARD/TRIM:
+#   Btrfs 'discard=async' only helps if discards can reach the NVMe.
+#   For LUKS, you must explicitly allow discards (e.g. via kernel cmdline
+#   rd.luks.options=<UUID>=discard or allow-discards depending on your stack).
+# ==============================================================================
 
-umount -R /mnt 2>/dev/null || true
+TMP_ARCH_DISK="/tmp/arch_disk"
+TMP_ARCH_MAPPER="/tmp/arch_mapper"
 
-if [ ! -f /tmp/arch_mapper ]; then
-    echo "LUKS mapper not found. Run 02_luks.sh first."
-    exit 1
+MAPPER=""
+DEVICE=""
+DISK=""
+EFI_PART=""
+
+die()  { echo "ERROR: $*" >&2; exit 1; }
+info() { echo "==> $*"; }
+warn() { echo "WARNING: $*" >&2; }
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
+}
+
+cleanup_on_exit() {
+  local ec=$?
+  if [[ $ec -ne 0 ]]; then
+    set +e
+    umount -R /mnt >/dev/null 2>&1 || true
+    warn "Step 03 failed (exit code $ec). Attempted to unmount /mnt."
+  fi
+}
+trap cleanup_on_exit EXIT
+
+[[ ${EUID:-0} -eq 0 ]] || die "This script must be run as root."
+
+require_cmd mount
+require_cmd umount
+require_cmd lsblk
+require_cmd sync
+
+# Ensure tools exist; install if missing (Arch ISO normally has them).
+if ! command -v mkfs.btrfs >/dev/null 2>&1; then
+  require_cmd pacman
+  info "Installing btrfs-progs..."
+  pacman -S --noconfirm --needed btrfs-progs
 fi
+require_cmd mkfs.btrfs
+require_cmd btrfs
 
-MAPPER=$(cat /tmp/arch_mapper)
+if ! command -v mkfs.fat >/dev/null 2>&1; then
+  require_cmd pacman
+  info "Installing dosfstools..."
+  pacman -S --noconfirm --needed dosfstools
+fi
+require_cmd mkfs.fat
+
+umount -R /mnt >/dev/null 2>&1 || true
+
+[[ -f "$TMP_ARCH_MAPPER" ]] || die "Mapper info not found ($TMP_ARCH_MAPPER). Run step 02 first."
+MAPPER="$(<"$TMP_ARCH_MAPPER")"
+[[ -n "$MAPPER" ]] || die "$TMP_ARCH_MAPPER is empty."
+
 DEVICE="/dev/mapper/$MAPPER"
+[[ -b "$DEVICE" ]] || die "Mapper device not found: $DEVICE"
 
-if [ ! -b "$DEVICE" ]; then
-    echo "Mapper device not found!"
-    exit 1
+[[ -f "$TMP_ARCH_DISK" ]] || die "Disk info not found ($TMP_ARCH_DISK). Run step 01 first."
+DISK="$(<"$TMP_ARCH_DISK")"
+[[ -b "$DISK" ]] || die "Disk not found: $DISK"
+
+# Detect EFI partition
+if [[ "$DISK" == *"nvme"* || "$DISK" == *"mmcblk"* ]]; then
+  EFI_PART="${DISK}p1"
+else
+  EFI_PART="${DISK}1"
 fi
+[[ -b "$EFI_PART" ]] || die "EFI partition not found: $EFI_PART"
 
-command -v mkfs.btrfs >/dev/null || pacman -S --noconfirm btrfs-progs
-
-echo
-echo "Creating BTRFS filesystem..."
-
+info "Creating Btrfs filesystem on $DEVICE ..."
 mkfs.btrfs -f -L arch "$DEVICE"
+sync
 
-echo
-echo "Mounting temporary BTRFS root..."
-
+info "Creating Btrfs subvolumes..."
 mount "$DEVICE" /mnt
-
-echo
-echo "Creating subvolumes..."
-
 btrfs subvolume create /mnt/@
 btrfs subvolume create /mnt/@home
 btrfs subvolume create /mnt/@log
 btrfs subvolume create /mnt/@cache
 btrfs subvolume create /mnt/@snapshots
-
-echo
-echo "Unmounting temporary mount..."
-
 umount /mnt
-
-echo
-echo "Mounting subvolumes..."
+sync
 
 BTRFS_OPTS="noatime,compress=zstd:1,space_cache=v2,discard=async,commit=120"
 
-mount -o $BTRFS_OPTS,subvol=@ "$DEVICE" /mnt
+info "Mounting final subvolume layout..."
+mount -o "${BTRFS_OPTS},subvol=@"" " "$DEVICE" /mnt
 
-mkdir -p /mnt/{home,var/log,var/cache,.snapshots,boot}
+mkdir -p /mnt/home /mnt/var/log /mnt/var/cache /mnt/.snapshots /mnt/boot
 
-mount -o $BTRFS_OPTS,subvol=@home "$DEVICE" /mnt/home
-mount -o $BTRFS_OPTS,subvol=@log "$DEVICE" /mnt/var/log
-mount -o $BTRFS_OPTS,subvol=@cache "$DEVICE" /mnt/var/cache
-mount -o $BTRFS_OPTS,subvol=@snapshots "$DEVICE" /mnt/.snapshots
+mount -o "${BTRFS_OPTS},subvol=@home" "$DEVICE" /mnt/home
+mount -o "${BTRFS_OPTS},subvol=@log" "$DEVICE" /mnt/var/log
+mount -o "${BTRFS_OPTS},subvol=@cache" "$DEVICE" /mnt/var/cache
+mount -o "${BTRFS_OPTS},subvol=@snapshots" "$DEVICE" /mnt/.snapshots
 
-echo
-echo "Mounting EFI partition..."
-
-DISK=$(cat /tmp/arch_disk)
-EFI_PART="${DISK}p1"
-
-if [[ "$DISK" != *"nvme"* ]]; then
-    EFI_PART="${DISK}1"
-fi
-
-command -v mkfs.fat >/dev/null || pacman -S --noconfirm dosfstools
-
+info "Formatting EFI partition as FAT32 and mounting at /mnt/boot..."
 mkfs.fat -F32 -n EFI "$EFI_PART"
 mount "$EFI_PART" /mnt/boot
 
-echo
-echo "Subvolumes created:"
-btrfs subvolume list /mnt
+sync
 
 echo
-echo "BTRFS layout ready."
-
+info "Subvolumes:"
+btrfs subvolume list /mnt || true
+echo
+info "Block devices:"
 lsblk -f
