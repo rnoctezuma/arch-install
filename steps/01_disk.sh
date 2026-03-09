@@ -54,7 +54,11 @@ echo "===================================="
 echo
 
 info "Available disks (TYPE=disk):"
-lsblk -d -p -n -o NAME,SIZE,MODEL,TRAN,ROTA,TYPE | awk '$6=="disk"{print}' || true
+
+lsblk -d -p -n \
+  -o NAME,SIZE,MODEL,TRAN,ROTA \
+  -e 7
+
 echo
 
 read -rp "Enter disk to use (example: /dev/nvme0n1): " DISK_RAW
