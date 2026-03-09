@@ -28,8 +28,15 @@ WIFI setup
   6. Ctrl + C -> check internet connection: ping -c 3 archlinux.org
 ```
 
-### Log into the installed system
+### Install
 
 ```sh
-arch-chroot /mnt
+timedatectl set-ntp true
+pacman -Sy git
+
+git clone https://github.com/rnoctezuma/arch-install
+cd arch-install
+chmod +x install.sh
+
+./install.sh
 ```
