@@ -5,70 +5,48 @@ echo "================================="
 echo "Arch Linux Automated Installer"
 echo "================================="
 
-# Ensure running as root
-if [[ $EUID -ne 0 ]]; then
-  echo "This installer must be run as root."
-  exit 1
-fi
-
-# Ensure /mnt exists
-if [[ ! -d /mnt ]]; then
-  echo "/mnt directory not found."
-  exit 1
-fi
+[[ $EUID -eq 0 ]] || { echo "Run as root."; exit 1; }
+[[ -d /mnt ]] || { echo "/mnt not found."; exit 1; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-steps=(
+steps_live=(
   01_disk.sh
   02_luks.sh
   03_btrfs.sh
   04_base_install.sh
+)
+
+steps_chroot=(
   05_system_config.sh
   06_bootloader.sh
 )
 
-for step in "${steps[@]}"; do
+# ---- live steps ----
+for step in "${steps_live[@]}"; do
   echo
   echo "Running $step"
-  echo "---------------------------------"
+  bash "$SCRIPT_DIR/steps/$step"
+done
 
-  STEP_PATH="$SCRIPT_DIR/steps/$step"
+# prepare state files for chroot
+mkdir -p /mnt/tmp
+cp /tmp/arch_* /mnt/tmp/
 
-  if [[ ! -f "$STEP_PATH" ]]; then
-    echo "Step file not found: $STEP_PATH"
-    exit 1
-  fi
+# ensure DNS works inside chroot
+cp /etc/resolv.conf /mnt/etc/resolv.conf
 
-  if [[ "$step" == "05_system_config.sh" ]]; then
-
-      # Fix DNS inside chroot (important for pacman)
-      cp /etc/resolv.conf /mnt/etc/resolv.conf
-
-      # Copy step into new system
-      cp "$STEP_PATH" /mnt/root/
-
-      # Execute inside installed system
-      arch-chroot /mnt bash "/root/$step"
-
-      # Remove installer script from system
-      rm /mnt/root/$step
-
-  else
-      bash "$STEP_PATH"
-  fi
-
+# ---- chroot steps ----
+for step in "${steps_chroot[@]}"; do
   echo
-  echo "$step completed."
-
+  echo "Running $step (inside chroot)"
+  cp "$SCRIPT_DIR/steps/$step" "/mnt/root/$step"
+  arch-chroot /mnt bash "/root/$step"
+  rm -f "/mnt/root/$step"
 done
 
 echo
 echo "================================="
 echo "INSTALLATION FINISHED"
 echo "================================="
-echo
-echo "You can now reboot:"
-echo
-echo "    reboot"
-echo
+echo "You can now reboot."
