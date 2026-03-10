@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eEuo pipefail
+set -euo pipefail
 
 # ==============================================================================
 # Step 07 (optional): Create a UEFI NVRAM boot entry for Limine via efibootmgr
@@ -18,7 +18,6 @@ cleanup_on_exit() {
   if (( ec != 0 )); then
     warn "Step 07 failed (exit code $ec)."
   fi
-  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 

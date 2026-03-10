@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eEuo pipefail
+set -euo pipefail
 
 # ==============================================================================
 # Step 08: Snapshot-aware Limine boot entry generator (Limine v10)
@@ -51,8 +51,6 @@ cleanup_on_exit() {
   if (( ec != 0 )); then
     warn "Step 08 failed (exit code $ec)."
   fi
-
-  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eEuo pipefail
+set -euo pipefail
 
 # ==============================================================================
 # Step 01: Disk Selection & Partitioning (UEFI-only)
@@ -33,7 +33,6 @@ cleanup_on_exit() {
       warn "Step 01 failed (exit code $ec). Cleaned temporary state."
     fi
   fi
-  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eEuo pipefail
+set -euo pipefail
 
 # ==============================================================================
 # Step 03: Btrfs filesystem + subvolumes + mounts + format/mount ESP
@@ -37,7 +37,6 @@ cleanup_on_exit() {
     umount -R /mnt >/dev/null 2>&1 || true
     warn "Step 03 failed (exit code $ec). Attempted to unmount /mnt."
   fi
-  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 

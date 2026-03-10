@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eEuo pipefail
+set -euo pipefail
 
 # ==============================================================================
 # Step 04: Base Arch installation into /mnt
@@ -19,7 +19,6 @@ cleanup_on_exit() {
   if (( ec != 0 )); then
     warn "Step 04 failed (exit code $ec)."
   fi
-  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 

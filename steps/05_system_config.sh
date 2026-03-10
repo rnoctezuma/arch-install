@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eEuo pipefail
+set -euo pipefail
 
 # ==============================================================================
 # Step 05: System configuration (RUN INSIDE arch-chroot /mnt)
@@ -27,7 +27,6 @@ cleanup_on_exit() {
   if (( ec != 0 )); then
     warn "Step 05 failed (exit code $ec)."
   fi
-  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 

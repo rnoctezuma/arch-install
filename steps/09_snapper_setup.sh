@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eEuo pipefail
+set -euo pipefail
 
 # ==============================================================================
 # Step 09: Snapper initial setup + pacman hooks (pre/post snapshots)
@@ -21,7 +21,6 @@ cleanup_on_exit() {
   if (( ec != 0 )); then
     warn "Step 09 failed (exit code $ec)."
   fi
-  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eEuo pipefail
+set -euo pipefail
 
 # ==============================================================================
 # Step 10: Snapper plugin -> refresh Limine snapshot boot entries automatically
@@ -25,7 +25,6 @@ cleanup_on_exit() {
   if (( ec != 0 )); then
     warn "Step 10 failed (exit code $ec)."
   fi
-  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 

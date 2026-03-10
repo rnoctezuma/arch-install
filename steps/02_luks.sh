@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eEuo pipefail
+set -euo pipefail
 
 # ==============================================================================
 # Step 02: LUKS2 encryption on ROOT partition
@@ -36,7 +36,6 @@ cleanup_on_exit() {
     fi
     warn "Step 02 failed (exit code $ec). Cleaned /tmp state."
   fi
-  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
