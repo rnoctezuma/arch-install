@@ -74,7 +74,7 @@ DEVICE="/dev/mapper/$MAPPER"
 DISK="$(<"$TMP_ARCH_DISK")"
 [[ -b "$DISK" ]] || die "Disk not found: $DISK"
 
-EFI_PART="$(lsblk -npo NAME,PARTLABEL "$DISK" | awk '$2=="EFI"{print $1}')"
+EFI_PART="$(lsblk -npo PATH,PARTLABEL "$DISK" | awk '$2=="EFI"{print $1}')"
 
 [[ -b "$EFI_PART" ]] || die "EFI partition not found: $EFI_PART"
 
