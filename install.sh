@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
+set -eEuo pipefail
 
-LOG_DIR="/tmp/arch-install-logs"
-LOG_FILE="${LOG_DIR}/install-$(date +%Y%m%d-%H%M%S).log"
-
+LOG_DIR="/var/log/arch-install"
 mkdir -p "$LOG_DIR"
-
-exec > >(tee -a "$LOG_FILE") 2>&1
+LOG_FILE="${LOG_DIR}/install-$(date +%Y%m%d-%H%M%S).log"
+exec > >(tee -a "$LOG_FILE" || cat) 2>&1
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
 
 on_error() {
+  trap - ERR
   local exit_code=$?
   local line_no=$1
   local cmd="${2:-unknown}"
@@ -26,14 +25,17 @@ on_error() {
   exit "$exit_code"
 }
 
-trap 'on_error $LINENO "$BASH_COMMAND"' ERR
+trap 'on_error ${LINENO} "${BASH_COMMAND}"' ERR
 
 cleanup_on_exit() {
   local ec=$?
-  if [[ $ec -eq 0 ]]; then
+  if (( ec == 0 )); then
     info "Installer finished successfully."
-    info "Log file: $LOG_FILE"
+  else
+    warn "Installer exited with error code $ec"
   fi
+  info "Log file: $LOG_FILE"
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
@@ -96,7 +98,7 @@ run_step_chroot() {
 
   info "Copied to /mnt/root/$step"
 
-  arch-chroot /mnt bash -x "/root/$step"
+  arch-chroot /mnt bash "/root/$step"
 
   info "STEP COMPLETED: $step"
 }

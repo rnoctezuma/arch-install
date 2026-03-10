@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eEuo pipefail
 
 # ==============================================================================
 # Step 08: Snapshot-aware Limine boot entry generator (Limine v10)
@@ -39,10 +39,20 @@ logv(){ [[ $VERBOSE -eq 1 ]] && info "$*"; }
 
 cleanup_on_exit() {
   local ec=$?
-  if [[ $ec -ne 0 ]]; then
+
+  # Always cleanup temp files if defined
+  if [[ -n "${BLOCK:-}" && -f "${BLOCK:-}" ]]; then
+    rm -f "$BLOCK" >/dev/null 2>&1 || true
+  fi
+  if [[ -n "${NEWCONF:-}" && -f "${NEWCONF:-}" ]]; then
+    rm -f "$NEWCONF" >/dev/null 2>&1 || true
+  fi
+
+  if (( ec != 0 )); then
     warn "Step 08 failed (exit code $ec)."
   fi
-  return 0
+
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
@@ -112,7 +122,7 @@ fi
 
 [[ -n "${CRYPT_UUID:-}" ]] || die "Failed to detect LUKS UUID."
 
-CMDLINE_BASE_PREFIX="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
+CMDLINE_BASE_PREFIX="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
 
 logv "Kernel: $KERNEL_FILE"
 logv "Initramfs: $INITRAMFS_FILE"
@@ -156,7 +166,6 @@ fi
 
 BLOCK="$(mktemp)"
 NEWCONF="$(mktemp)"
-trap 'rm -f "$BLOCK" "$NEWCONF" >/dev/null 2>&1 || true' EXIT
 
 {
   echo "# Auto-generated snapshot entries (newest-first)"

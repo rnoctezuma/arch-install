@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eEuo pipefail
 
 # ==============================================================================
 # Step 06: Install Limine (UEFI-only) + generate limine.conf (Limine v10)
@@ -17,10 +17,10 @@ require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
   local ec=$?
-  if [[ $ec -ne 0 ]]; then
+  if (( ec != 0 )); then
     warn "Step 06 failed (exit code $ec)."
   fi
-  return 0
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
@@ -89,7 +89,7 @@ if [[ -f /boot/intel-ucode.img ]]; then
   UCODE_LINE="    module_path: boot():/intel-ucode.img"
 fi
 
-CMDLINE_BASE="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
+CMDLINE_BASE="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
 
 LIMINE_CONF="${ESP_EFI_DIR}/limine.conf"
 info "Writing Limine v10 config to $LIMINE_CONF"
@@ -114,14 +114,14 @@ ${UCODE_LINE}
     kernel_path: boot():/${KERNEL_FILE}
 ${UCODE_LINE}
     module_path: boot():/$( [[ -f "/boot/$FALLBACK_INITRAMFS_FILE" ]] && echo "$FALLBACK_INITRAMFS_FILE" || echo "$INITRAMFS_FILE" )
-    cmdline: root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rootflags=subvol=@ rw
+    cmdline: root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw
 
 /Arch Linux (rescue)
     protocol: linux
     kernel_path: boot():/${KERNEL_FILE}
 ${UCODE_LINE}
     module_path: boot():/${INITRAMFS_FILE}
-    cmdline: root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rw systemd.unit=emergency.target
+    cmdline: root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw systemd.unit=emergency.target
 
 # --- SNAPSHOT AUTO START ---
 # (Step 08 will replace the block between START/END)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eEuo pipefail
 
 # ==============================================================================
 # Step 04: Base Arch installation into /mnt
@@ -15,11 +15,11 @@ warn() { echo "WARNING: $*" >&2; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
-  local ec=$?
-  if [[ $ec -ne 0 ]]; then
+  ec=$?
+  if (( ec != 0 )); then
     warn "Step 04 failed (exit code $ec)."
   fi
-  return 0
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
@@ -44,7 +44,7 @@ fi
 [[ $NET_OK -eq 1 ]] || die "Network appears offline. Configure Wi-Fi (iwctl) or Ethernet, then re-run."
 
 info "Updating pacman keyring (live ISO)..."
-pacman -Sy --noconfirm archlinux-keyring
+pacman -Sy --noconfirm archlinux-keyring || die "Failed to update keyring"
 
 info "Installing reflector (live ISO)..."
 pacman -S --noconfirm --needed reflector
@@ -58,6 +58,8 @@ if ! reflector \
   --latest 20 \
   --save /etc/pacman.d/mirrorlist; then
   warn "Reflector failed; continuing with current mirrorlist."
+else
+  info "Mirrorlist updated successfully."
 fi
 
 info "Installing base system into /mnt..."
@@ -78,6 +80,7 @@ TARGET_PACCONF="/mnt/etc/pacman.conf"
 sed -i 's/^#Color/Color/' "$TARGET_PACCONF"
 sed -i 's/^#ParallelDownloads/ParallelDownloads/' "$TARGET_PACCONF"
 grep -q '^ILoveCandy' "$TARGET_PACCONF" || sed -i '/^Color/a ILoveCandy' "$TARGET_PACCONF"
+sed -i 's/^#VerbosePkgLists/VerbosePkgLists/' "$TARGET_PACCONF"
 
 info "Generating fstab..."
 genfstab -U /mnt > /mnt/etc/fstab

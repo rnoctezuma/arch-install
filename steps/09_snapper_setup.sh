@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eEuo pipefail
 
 # ==============================================================================
 # Step 09: Snapper initial setup + pacman hooks (pre/post snapshots)
@@ -18,10 +18,10 @@ require_cmd(){ command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
   local ec=$?
-  if [[ $ec -ne 0 ]]; then
+  if (( ec != 0 )); then
     warn "Step 09 failed (exit code $ec)."
   fi
-  return 0
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
@@ -64,12 +64,12 @@ info "Configuring snapper timeline retention..."
 # Conservative defaults (tune later)
 sed -i 's/^TIMELINE_CREATE=.*/TIMELINE_CREATE="yes"/' "$CONFIG"
 sed -i 's/^TIMELINE_CLEANUP=.*/TIMELINE_CLEANUP="yes"/' "$CONFIG"
-sed -i 's/^TIMELINE_LIMIT_HOURLY=.*/TIMELINE_LIMIT_HOURLY="10"/' "$CONFIG"
-sed -i 's/^TIMELINE_LIMIT_DAILY=.*/TIMELINE_LIMIT_DAILY="7"/' "$CONFIG"
-sed -i 's/^TIMELINE_LIMIT_WEEKLY=.*/TIMELINE_LIMIT_WEEKLY="4"/' "$CONFIG"
-sed -i 's/^TIMELINE_LIMIT_MONTHLY=.*/TIMELINE_LIMIT_MONTHLY="3"/' "$CONFIG"
+sed -i 's/^TIMELINE_LIMIT_HOURLY=.*/TIMELINE_LIMIT_HOURLY="4"/' "$CONFIG"
+sed -i 's/^TIMELINE_LIMIT_DAILY=.*/TIMELINE_LIMIT_DAILY="5"/' "$CONFIG"
+sed -i 's/^TIMELINE_LIMIT_WEEKLY=.*/TIMELINE_LIMIT_WEEKLY="3"/' "$CONFIG"
+sed -i 's/^TIMELINE_LIMIT_MONTHLY=.*/TIMELINE_LIMIT_MONTHLY="1"/' "$CONFIG"
 sed -i 's/^NUMBER_CLEANUP=.*/NUMBER_CLEANUP="yes"/' "$CONFIG"
-sed -i 's/^NUMBER_LIMIT=.*/NUMBER_LIMIT="15"/' "$CONFIG"
+sed -i 's/^NUMBER_LIMIT=.*/NUMBER_LIMIT="20"/' "$CONFIG"
 
 info "Enabling snapper timers (enable only in chroot)..."
 systemctl enable snapper-timeline.timer
@@ -85,22 +85,77 @@ install -d -m 0755 /var/lib/snapper
 cat > /usr/local/sbin/snapper-pacman-pre <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
 STATE="/var/lib/snapper/pacman-pre-number"
+TMP="$(mktemp)"
+
 SNAPNUM="$(snapper --no-dbus -c root create -t pre -p -d "pacman pre" -c number)"
-echo "$SNAPNUM" > "$STATE"
+
+# Validate number
+if [[ ! "$SNAPNUM" =~ ^[0-9]+$ ]]; then
+  exit 0
+fi
+
+# Store number + timestamp
+echo "$SNAPNUM $(date +%s)" > "$TMP"
+mv -f "$TMP" "$STATE"
 EOF
 chmod +x /usr/local/sbin/snapper-pacman-pre
 
 cat > /usr/local/sbin/snapper-pacman-post <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+
 STATE="/var/lib/snapper/pacman-pre-number"
-if [[ ! -f "$STATE" ]]; then
+
+[[ -f "$STATE" ]] || exit 0
+
+read -r PRENUM PRETS < "$STATE" || {
+  rm -f "$STATE"
+  exit 0
+}
+
+# Validate number
+if [[ ! "$PRENUM" =~ ^[0-9]+$ ]]; then
+  rm -f "$STATE"
   exit 0
 fi
-PRENUM="$(<"$STATE")"
+
+# Validate timestamp (max age 1 hour)
+NOW="$(date +%s)"
+MAX_AGE=3600
+
+if [[ -n "${PRETS:-}" && "$PRETS" =~ ^[0-9]+$ ]]; then
+  AGE=$(( NOW - PRETS ))
+
+  # Clock skew protection (RTC changed backwards)
+  if (( AGE < 0 )); then
+    rm -f "$STATE"
+    exit 0
+  fi
+
+  if (( AGE > MAX_AGE )); then
+    rm -f "$STATE"
+    exit 0
+  fi
+fi
+
+# Check snapshot exists and is type pre
+if ! snapper --no-dbus -c root list \
+    | awk -v n="$PRENUM" '$1 == n && $3 == "pre" {found=1} END{exit !found}'
+then
+  rm -f "$STATE"
+  exit 0
+fi
+
 rm -f "$STATE"
-snapper --no-dbus -c root create -t post --pre-number "$PRENUM" -p -d "pacman post" -c number >/dev/null
+
+snapper --no-dbus -c root create \
+  -t post \
+  --pre-number "$PRENUM" \
+  -p \
+  -d "pacman post" \
+  -c number >/dev/null || true
 EOF
 chmod +x /usr/local/sbin/snapper-pacman-post
 

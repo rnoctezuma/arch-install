@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eEuo pipefail
 
 # ==============================================================================
 # Step 05: System configuration (RUN INSIDE arch-chroot /mnt)
@@ -14,6 +14,8 @@ set -euo pipefail
 # - mkinitcpio: systemd initramfs + sd-encrypt
 # ==============================================================================
 
+TMPDIR=""
+
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 warn() { echo "WARNING: $*" >&2; }
@@ -21,11 +23,11 @@ warn() { echo "WARNING: $*" >&2; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
-  local ec=$?
-  if [[ $ec -ne 0 ]]; then
+  ec=$?
+  if (( ec != 0 )); then
     warn "Step 05 failed (exit code $ec)."
   fi
-  return 0
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
@@ -45,8 +47,11 @@ require_cmd tail
 require_cmd pacman-key
 
 # ---- Timezone / locale --------------------------------------------------------
-info "Setting timezone: Asia/Ho_Chi_Minh"
-ln -sf /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime
+TIMEZONE="Asia/Ho_Chi_Minh"
+if [[ ! -f "/usr/share/zoneinfo/${TIMEZONE}" ]]; then
+  die "Timezone file not found: ${TIMEZONE}"
+fi
+ln -sf "/usr/share/zoneinfo/${TIMEZONE}" /etc/localtime
 hwclock --systohc
 
 info "Configuring locale: en_US.UTF-8"
@@ -56,8 +61,11 @@ printf "LANG=en_US.UTF-8\n" > /etc/locale.conf
 
 # ---- Hostname / hosts ---------------------------------------------------------
 info "Setting hostname"
-read -rp "Enter hostname: " hostname
-[[ -n "${hostname:-}" ]] || die "Hostname cannot be empty."
+read -rp "Enter hostname (default: arch): " hostname
+hostname="${hostname:-arch}"
+if ! [[ "$hostname" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
+  die "Invalid hostname: $hostname"
+fi
 printf "%s\n" "$hostname" > /etc/hostname
 
 cat > /etc/hosts <<EOF
@@ -71,8 +79,8 @@ info "Set root password"
 passwd
 
 info "Creating user"
-read -rp "Enter username: " username
-[[ -n "${username:-}" ]] || die "Username cannot be empty."
+read -rp "Enter username (default: rnoct): " username
+[[ -n "${username:-rnoct}" ]] || die "Username cannot be empty."
 if ! [[ "$username" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
   die "Invalid username: $username"
 fi
@@ -99,7 +107,7 @@ fi
 
 # ---- Baseline packages --------------------------------------------------------
 info "Installing essential packages (baseline)"
-pacman -Sy --noconfirm
+pacman -Syy --noconfirm
 
 pacman -S --noconfirm --needed \
   nano git htop fastfetch curl \
@@ -118,14 +126,9 @@ if [[ ! -d /etc/pacman.d/gnupg ]]; then
   pacman-key --populate archlinux
 fi
 
-CACHY_KEY="F3B607488DB35A47"
-pacman-key --recv-keys "$CACHY_KEY" --keyserver keyserver.ubuntu.com
-pacman-key --lsign-key "$CACHY_KEY"
-
 # Download latest keyring + mirrorlist packages by parsing official mirror listing.
 CACHY_BASE_URL="https://mirror.cachyos.org/repo/x86_64/cachyos"
 TMPDIR="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR" >/dev/null 2>&1 || true' EXIT
 
 LISTING="$(curl -fsSL "$CACHY_BASE_URL/")" || die "Failed to fetch $CACHY_BASE_URL/"
 
@@ -184,8 +187,8 @@ pacman -Syy --noconfirm
 
 # ---- NVIDIA userspace (CachyOS v3) -------------------------------------------
 info "Installing NVIDIA userspace (nvidia-utils + lib32) from CachyOS repos"
-pacman -S --noconfirm --needed nvidia-utils || warn "nvidia-utils install failed."
-pacman -S --noconfirm --needed lib32-nvidia-utils || warn "lib32-nvidia-utils install failed (check multilib)."
+pacman -S --noconfirm --needed nvidia-utils || die "Failed to install nvidia-utils"
+pacman -S --noconfirm --needed lib32-nvidia-utils || die "lib32-nvidia-utils install failed (check multilib)."
 
 # ---- CachyOS kernel + nvidia-open modules ------------------------------------
 info "Installing CachyOS kernel + nvidia-open modules"
@@ -199,8 +202,10 @@ fi
 
 # ---- mkinitcpio ---------------------------------------------------------------
 info "Configuring mkinitcpio for systemd initramfs + sd-encrypt"
-sed -i 's/^MODULES=.*/MODULES=(btrfs nvme)/' /etc/mkinitcpio.conf
+sed -i 's/^MODULES=.*/MODULES=(btrfs nvme nvidia nvidia_modeset nvidia_uvm nvidia_drm)/' /etc/mkinitcpio.conf
 sed -i 's/^HOOKS=.*/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)/' /etc/mkinitcpio.conf
+
+echo "options nvidia-drm modeset=1" > /etc/modprobe.d/nvidia.conf
 
 info "Building initramfs for all presets"
 mkinitcpio -P

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eEuo pipefail
 
 # ==============================================================================
 # Step 01: Disk Selection & Partitioning (UEFI-only)
@@ -12,6 +12,7 @@ set -euo pipefail
 # ==============================================================================
 
 TMP_ARCH_DISK="/tmp/arch_disk"
+TMP_ARCH_ROOT_PART="/tmp/arch_root_part"
 DISK=""
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
@@ -22,16 +23,17 @@ require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Required tool not found:
 
 cleanup_on_exit() {
   local ec=$?
-  if [[ $ec -ne 0 ]]; then
+  if (( ec != 0 )); then
     set +e
-    rm -f "$TMP_ARCH_DISK" 2>/dev/null || true
+    rm -f "$TMP_ARCH_DISK" "$TMP_ARCH_ROOT_PART" 2>/dev/null || true
     if [[ -n "${DISK:-}" && -b "${DISK:-}" ]]; then
       sync 2>/dev/null || true
       partprobe "$DISK" 2>/dev/null || true
       sync 2>/dev/null || true
+      warn "Step 01 failed (exit code $ec). Cleaned temporary state."
     fi
-    warn "Step 01 failed (exit code $ec). Cleaned temporary state."
   fi
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
@@ -73,15 +75,16 @@ DISK_TYPE="$(lsblk -dnro TYPE "$DISK" 2>/dev/null || true)"
 
 # Avoid nuking the live ISO if it is mounted at /run/archiso/bootmnt
 LIVE_SRC="$(awk '$2=="/run/archiso/bootmnt"{print $1; exit}' /proc/mounts 2>/dev/null || true)"
-if [[ -n "${LIVE_SRC:-}" && -b "${LIVE_SRC:-}" ]]; then
-  LIVE_PARENT="$(lsblk -no PKNAME "$LIVE_SRC" 2>/dev/null || true)"
-  if [[ -n "${LIVE_PARENT:-}" && "/dev/$LIVE_PARENT" == "$DISK" ]]; then
+if [[ -n "${LIVE_SRC}" && -b "${LIVE_SRC}" ]]; then
+  LIVE_PARENT="$(lsblk -no PKNAME "$LIVE_SRC" 2>/dev/null | head -n1 || true)"
+  if [[ -n "${LIVE_PARENT}" && "/dev/${LIVE_PARENT}" == "$DISK" ]]; then
     die "Selected disk ($DISK) seems to be the live ISO media. Refusing."
   fi
 fi
 
+
 # Detect partitions + mounts + swap usage
-mapfile -t PARTS < <(lsblk -nrpo NAME,TYPE "$DISK" | awk '$2=="part"{print $1}')
+mapfile -t PARTS < <(lsblk -nrpo NAME,TYPE "$DISK" | awk '$2=="part"{print $1}' || true)
 MOUNTED=()
 SWAPS=()
 for p in "${PARTS[@]}"; do
@@ -149,11 +152,13 @@ fi
 command -v udevadm >/dev/null 2>&1 && udevadm settle || true
 
 info "Creating GPT partition table..."
+wipefs -af "$DISK"
 parted -s -a optimal "$DISK" mklabel gpt
 
 info "Creating EFI partition (ESP)..."
 parted -s -a optimal "$DISK" mkpart EFI fat32 1MiB 2049MiB
 parted -s "$DISK" set 1 esp on
+parted -s "$DISK" name 1 EFI
 
 info "Creating ROOT partition..."
 parted -s -a optimal "$DISK" mkpart ROOT 2049MiB 100%
@@ -162,6 +167,16 @@ info "Informing kernel of partition table changes..."
 partprobe "$DISK"
 sync
 command -v udevadm >/dev/null 2>&1 && udevadm settle || true
+
+# Determine ROOT partition via PARTLABEL (deterministic)
+ROOT_PART="$(lsblk -npo NAME,PARTLABEL "$DISK" | awk '$2=="ROOT"{print $1}')"
+
+[[ -n "$ROOT_PART" ]] || die "Failed to detect ROOT partition by PARTLABEL."
+[[ -b "$ROOT_PART" ]] || die "Detected ROOT partition is not a block device: $ROOT_PART"
+
+printf '%s\n' "$ROOT_PART" > "$TMP_ARCH_ROOT_PART"
+sync
+info "ROOT partition saved to $TMP_ARCH_ROOT_PART ($ROOT_PART)"
 
 echo
 info "Final layout:"

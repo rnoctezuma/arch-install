@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eEuo pipefail
 
 # ==============================================================================
 # Step 07 (optional): Create a UEFI NVRAM boot entry for Limine via efibootmgr
@@ -15,10 +15,10 @@ require_cmd(){ command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
   local ec=$?
-  if [[ $ec -ne 0 ]]; then
+  if (( ec != 0 )); then
     warn "Step 07 failed (exit code $ec)."
   fi
-  return 0
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eEuo pipefail
 
 # ==============================================================================
 # Step 10: Snapper plugin -> refresh Limine snapshot boot entries automatically
@@ -22,10 +22,10 @@ require_cmd(){ command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
   local ec=$?
-  if [[ $ec -ne 0 ]]; then
+  if (( ec != 0 )); then
     warn "Step 10 failed (exit code $ec)."
   fi
-  return 0
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
@@ -81,13 +81,16 @@ cat > /usr/lib/snapper/plugins/90-limine-refresh <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure predictable execution environment (snapper plugins run with minimal env)
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
 # Arguments:
 #   $1 = action (e.g. create-snapshot-post)
 #   others depend on action (see snapper(8))
 action="${1:-}"
 
 case "$action" in
-  create-snapshot-post|rollback-post)
+  create-snapshot-post|rollback-post|delete-snapshot-post|cleanup-post)
     ;;
   *)
     exit 0

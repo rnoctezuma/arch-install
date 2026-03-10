@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eEuo pipefail
 
 # ==============================================================================
 # Step 02: LUKS2 encryption on ROOT partition
@@ -36,6 +36,7 @@ cleanup_on_exit() {
     fi
     warn "Step 02 failed (exit code $ec). Cleaned /tmp state."
   fi
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
@@ -52,11 +53,9 @@ DISK="$(<"$TMP_ARCH_DISK")"
 
 command -v udevadm >/dev/null 2>&1 && udevadm settle || true
 
-if [[ "$DISK" == *"nvme"* || "$DISK" == *"mmcblk"* ]]; then
-  ROOT_PART="${DISK}p2"
-else
-  ROOT_PART="${DISK}2"
-fi
+[[ -f "$TMP_ARCH_ROOT_PART" ]] || die "Missing $TMP_ARCH_ROOT_PART (run step 01)."
+ROOT_PART="$(<"$TMP_ARCH_ROOT_PART")"
+[[ -b "$ROOT_PART" ]] || die "Root partition not found: $ROOT_PART"
 
 info "Disk: $DISK"
 info "Root partition: $ROOT_PART"
@@ -131,8 +130,13 @@ cryptsetup luksFormat \
 
 sync
 info "Opening as /dev/mapper/$MAPPER ..."
-cryptsetup open "$ROOT_PART" "$MAPPER"
+cryptsetup open --allow-discards "$ROOT_PART" "$MAPPER"
 OPENED=1
+
+if [[ ! -b "/dev/mapper/$MAPPER" ]]; then
+  die "Failed to open LUKS device: /dev/mapper/$MAPPER not found."
+fi
+
 sync
 command -v udevadm >/dev/null 2>&1 && udevadm settle || true
 

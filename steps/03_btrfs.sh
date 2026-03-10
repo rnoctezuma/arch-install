@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eEuo pipefail
 
 # ==============================================================================
 # Step 03: Btrfs filesystem + subvolumes + mounts + format/mount ESP
@@ -37,6 +37,7 @@ cleanup_on_exit() {
     umount -R /mnt >/dev/null 2>&1 || true
     warn "Step 03 failed (exit code $ec). Attempted to unmount /mnt."
   fi
+  exit "$ec"
 }
 trap cleanup_on_exit EXIT
 
@@ -74,11 +75,8 @@ DEVICE="/dev/mapper/$MAPPER"
 DISK="$(<"$TMP_ARCH_DISK")"
 [[ -b "$DISK" ]] || die "Disk not found: $DISK"
 
-if [[ "$DISK" == *"nvme"* || "$DISK" == *"mmcblk"* ]]; then
-  EFI_PART="${DISK}p1"
-else
-  EFI_PART="${DISK}1"
-fi
+EFI_PART="$(lsblk -npo NAME,PARTLABEL "$DISK" | awk '$2=="EFI"{print $1}')"
+
 [[ -b "$EFI_PART" ]] || die "EFI partition not found: $EFI_PART"
 
 info "Creating Btrfs filesystem on $DEVICE ..."
@@ -92,7 +90,7 @@ btrfs subvolume create /mnt/@home
 btrfs subvolume create /mnt/@log
 btrfs subvolume create /mnt/@cache
 btrfs subvolume create /mnt/@snapshots
-umount /mnt
+umount /mnt || die "Failed to unmount /mnt after subvolume creation"
 sync
 
 BTRFS_OPTS="noatime,compress=zstd:1,space_cache=v2,discard=async,commit=120"
@@ -100,7 +98,12 @@ BTRFS_OPTS="noatime,compress=zstd:1,space_cache=v2,discard=async,commit=120"
 info "Mounting final subvolume layout..."
 mount -o "${BTRFS_OPTS},subvol=@" "$DEVICE" /mnt
 
+if ! mountpoint -q /mnt; then
+  die "Failed to mount /mnt"
+fi
+
 mkdir -p /mnt/home /mnt/var/log /mnt/var/cache /mnt/.snapshots /mnt/boot
+chmod 750 /mnt/.snapshots
 
 mount -o "${BTRFS_OPTS},subvol=@home"      "$DEVICE" /mnt/home
 mount -o "${BTRFS_OPTS},subvol=@log"       "$DEVICE" /mnt/var/log
@@ -109,6 +112,11 @@ mount -o "${BTRFS_OPTS},subvol=@snapshots" "$DEVICE" /mnt/.snapshots
 
 info "Formatting EFI partition as FAT32 and mounting at /mnt/boot..."
 mkfs.fat -F32 -n EFI "$EFI_PART"
+
+if ! blkid "$EFI_PART" | grep -q 'TYPE="vfat"'; then
+  die "EFI partition not formatted as FAT32"
+fi
+
 mount "$EFI_PART" /mnt/boot
 
 sync
