@@ -32,7 +32,7 @@ WIFI setup
 
 ```sh
 timedatectl set-ntp true
-pacman -Sy git
+pacman -Sy --noconfirm git
 
 git clone https://github.com/rnoctezuma/arch-install
 cd arch-install
