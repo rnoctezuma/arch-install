@@ -149,6 +149,28 @@ fi
 
 command -v udevadm >/dev/null 2>&1 && udevadm settle || true
 
+# ---- FORCE RELEASE DEVICE ----
+
+info "Releasing existing device usage..."
+
+# Close all crypt devices related to disk
+for dev in $(lsblk -rno NAME,TYPE "$DISK" | awk '$2=="crypt"{print $1}'); do
+  cryptsetup close "$dev" 2>/dev/null || true
+done
+
+# Close known cryptroot
+cryptsetup close cryptroot 2>/dev/null || true
+
+# Unmount everything under disk
+mount | grep "$DISK" | awk '{print $3}' | while read -r mp; do
+  umount -R "$mp" 2>/dev/null || true
+done
+
+swapoff -a 2>/dev/null || true
+
+udevadm settle
+sleep 1
+
 info "Creating GPT partition table..."
 wipefs -af "$DISK"
 parted -s -a optimal "$DISK" mklabel gpt
