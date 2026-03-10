@@ -72,39 +72,12 @@ DISK="$(echo "${DISK_RAW:-}" | tr -d '[:space:]')"
 DISK_TYPE="$(lsblk -dnro TYPE "$DISK" 2>/dev/null || true)"
 [[ "$DISK_TYPE" == "disk" ]] || die "Selected device is not TYPE=disk: $DISK (TYPE=$DISK_TYPE)"
 
-# Avoid nuking the live ISO media (strict-mode safe)
-if command -v findmnt >/dev/null 2>&1; then
-  set +e
-  LIVE_SRC="$(findmnt -no SOURCE /run/archiso/bootmnt 2>/dev/null)"
-  rc=$?
-  set -e
-
-  if (( rc == 0 )) && [[ -n "$LIVE_SRC" ]] && [[ -b "$LIVE_SRC" ]]; then
-
-    if command -v losetup >/dev/null 2>&1 && [[ "$LIVE_SRC" == /dev/loop* ]]; then
-      set +e
-      LOOP_BACKING="$(losetup -no BACK-FILE "$LIVE_SRC" 2>/dev/null)"
-      set -e
-      [[ -n "$LOOP_BACKING" ]] && LIVE_SRC="$LOOP_BACKING"
-    fi
-
-    if command -v lsblk >/dev/null 2>&1; then
-      set +e
-      LIVE_PARENT="$(lsblk -no PKNAME "$LIVE_SRC" 2>/dev/null)"
-      set -e
-    else
-      LIVE_PARENT=""
-    fi
-
-    if [[ -n "$LIVE_PARENT" ]]; then
-      LIVE_PARENT="/dev/$LIVE_PARENT"
-    else
-      LIVE_PARENT="$LIVE_SRC"
-    fi
-
-    if [[ "$LIVE_PARENT" == "$DISK" ]]; then
-      die "Selected disk ($DISK) appears to be the live ISO media. Refusing."
-    fi
+# Avoid nuking the live ISO if it is mounted at /run/archiso/bootmnt
+LIVE_SRC="$(awk '$2=="/run/archiso/bootmnt"{print $1; exit}' /proc/mounts 2>/dev/null || true)"
+if [[ -n "${LIVE_SRC:-}" && -b "${LIVE_SRC:-}" ]]; then
+  LIVE_PARENT="$(lsblk -no PKNAME "$LIVE_SRC" 2>/dev/null || true)"
+  if [[ -n "${LIVE_PARENT:-}" && "/dev/$LIVE_PARENT" == "$DISK" ]]; then
+    die "Selected disk ($DISK) seems to be the live ISO media. Refusing."
   fi
 fi
 
