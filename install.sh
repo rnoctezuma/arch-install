@@ -4,7 +4,7 @@ set -euo pipefail
 LOG_DIR="/var/log/arch-install"
 mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/install-$(date +%Y%m%d-%H%M%S).log"
-exec >>"$LOG_FILE" 2>&1
+exec > >(tee -a "$LOG_FILE") 2>&1
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 info(){ echo "==> $*"; }
