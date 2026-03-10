@@ -162,9 +162,11 @@ done
 cryptsetup close cryptroot 2>/dev/null || true
 
 # Unmount everything under disk
-mount | grep "$DISK" | awk '{print $3}' | while read -r mp; do
+while read -r mp; do
   umount -R "$mp" 2>/dev/null || true
-done
+done < <(
+  findmnt -rn -S "$DISK" -o TARGET 2>/dev/null || true
+)
 
 swapoff -a 2>/dev/null || true
 
