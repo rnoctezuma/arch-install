@@ -78,8 +78,10 @@ info "Set root password"
 passwd
 
 info "Creating user"
+
 read -rp "Enter username (default: rnoct): " username
-[[ -n "${username:-rnoct}" ]] || die "Username cannot be empty."
+username="${username:-rnoct}"
+
 if ! [[ "$username" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
   die "Invalid username: $username"
 fi
