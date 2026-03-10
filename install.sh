@@ -1,34 +1,17 @@
 #!/usr/bin/env bash
-set -eEuo pipefail
+set -euo pipefail
 
 LOG_DIR="/var/log/arch-install"
 mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/install-$(date +%Y%m%d-%H%M%S).log"
-exec > >(tee -a "$LOG_FILE") 2>&1
+exec >>"$LOG_FILE" 2>&1
 
-die()  { echo "ERROR: $*" >&2; exit 1; }
-info() { echo "==> $*"; }
-warn() { echo "WARNING: $*" >&2; }
-
-on_error() {
-  trap - ERR
-  local exit_code=$?
-  local line_no=$1
-  local cmd="${2:-unknown}"
-  echo
-  warn "Installer failed."
-  warn "Exit code : $exit_code"
-  warn "Line      : $line_no"
-  warn "Command   : $cmd"
-  warn "Log file  : $LOG_FILE"
-  echo
-  exit "$exit_code"
-}
-
-trap 'on_error ${LINENO} "${BASH_COMMAND}"' ERR
+die() { echo "ERROR: $*" >&2; exit 1; }
+info(){ echo "==> $*"; }
+warn(){ echo "WARNING: $*" >&2; }
 
 cleanup_on_exit() {
-  local ec=$?
+  ec=$?
   if (( ec == 0 )); then
     info "Installer finished successfully."
   else
@@ -38,16 +21,32 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit EXIT
 
+[[ $EUID -eq 0 ]] || die "This installer must be run as root."
+[[ -d /mnt ]] || die "/mnt directory not found."
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+run_step_live() {
+  local step="$1"
+  local path="$SCRIPT_DIR/steps/$step"
+
+  [[ -f "$path" ]] || die "Missing step: $step"
+
+  echo
+  info "RUN LIVE STEP: $step"
+
+  if ! bash "$path"; then
+    die "Step failed: $step"
+  fi
+
+  info "STEP COMPLETED: $step"
+}
+
 echo "================================="
 echo "Arch Linux Automated Installer"
 echo "================================="
 echo "Log file: $LOG_FILE"
 echo
-
-[[ ${EUID:-0} -eq 0 ]] || die "This installer must be run as root."
-[[ -d /mnt ]] || die "/mnt directory not found."
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 steps_live=(
   01_disk.sh
@@ -65,22 +64,6 @@ steps_chroot=(
   10_snapper_limine_hook.sh
 )
 
-run_step_live() {
-  local step="$1"
-  local step_path="$SCRIPT_DIR/steps/$step"
-
-  [[ -f "$step_path" ]] || die "Step file not found: $step_path"
-
-  echo
-  echo "---------------------------------"
-  info "RUN LIVE STEP: $step"
-  echo "---------------------------------"
-
-  bash "$step_path"
-
-  info "STEP COMPLETED: $step"
-}
-
 run_step_chroot() {
   local step="$1"
   local step_path="$SCRIPT_DIR/steps/$step"
@@ -97,7 +80,9 @@ run_step_chroot() {
 
   info "Copied to /mnt/root/$step"
 
-  arch-chroot /mnt bash "/root/$step"
+  if ! arch-chroot /mnt bash "/root/$step"; then
+    die "Chroot step failed: $step"
+  fi
 
   info "STEP COMPLETED: $step"
 }
