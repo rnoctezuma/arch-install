@@ -170,6 +170,11 @@ done < <(
 
 swapoff -a 2>/dev/null || true
 
+info "Force removing device-mapper tables..."
+
+# Remove all dm devices
+dmsetup remove_all --force 2>/dev/null || true
+
 udevadm settle
 sleep 1
 
