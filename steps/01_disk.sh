@@ -167,7 +167,7 @@ sync
 command -v udevadm >/dev/null 2>&1 && udevadm settle || true
 
 # Determine ROOT partition via PARTLABEL (deterministic)
-ROOT_PART="$(lsblk -npo NAME,PARTLABEL "$DISK" | awk '$2=="ROOT"{print $1}')"
+ROOT_PART="$(lsblk -rno PATH,PARTLABEL "$DISK" | awk '$2=="ROOT"{print $1}')"
 
 [[ -n "$ROOT_PART" ]] || die "Failed to detect ROOT partition by PARTLABEL."
 [[ -b "$ROOT_PART" ]] || die "Detected ROOT partition is not a block device: $ROOT_PART"
