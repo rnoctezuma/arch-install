@@ -8,9 +8,9 @@ set -euo pipefail
 # Key goals:
 # - Locale/timezone/users/sudo baseline
 # - Enable multilib (gaming)
-# - Add CachyOS repos FORCE x86-64-v3 (Intel hybrid caution)
+# - Add CachyOS repos in hybrid mode (no x86_64_v3 override)
 # - Install linux-cachyos + linux-cachyos-nvidia-open + headers
-# - Install nvidia-utils + lib32-nvidia-utils from CachyOS repos (match driver)
+# - Install nvidia-utils + lib32-nvidia-utils with matching driver stack
 # - mkinitcpio: systemd initramfs + sd-encrypt
 # ==============================================================================
 
@@ -23,7 +23,12 @@ warn() { echo "WARNING: $*" >&2; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
-  ec=$?
+  local ec=$?
+
+  if [[ -n "${TMPDIR:-}" && -d "${TMPDIR:-}" ]]; then
+    rm -rf "$TMPDIR" >/dev/null 2>&1 || true
+  fi
+
   if (( ec != 0 )); then
     warn "Step 05 failed (exit code $ec)."
   fi
@@ -117,8 +122,8 @@ pacman -S --noconfirm --needed \
   reflector pacman-contrib \
   efibootmgr
 
-# ---- CachyOS repos: FORCE x86-64-v3 ------------------------------------------
-info "Adding CachyOS repos (FORCE x86-64-v3)"
+# ---- CachyOS repos: hybrid mode ----------------------------------------------
+info "Adding CachyOS repos (hybrid mode, no x86_64_v3 override)"
 
 # Ensure pacman keyring exists
 if [[ ! -d /etc/pacman.d/gnupg ]]; then
@@ -140,37 +145,33 @@ pick_latest() {
 
 KEYRING_PKG="$(pick_latest 'cachyos-keyring-[0-9]{8}-[0-9]+-any\.pkg\.tar\.zst')"
 MIRRORLIST_PKG="$(pick_latest 'cachyos-mirrorlist-[0-9]+-[0-9]+-any\.pkg\.tar\.zst')"
-V3_MIRRORLIST_PKG="$(pick_latest 'cachyos-v3-mirrorlist-[0-9]+-[0-9]+-any\.pkg\.tar\.zst')"
 
 [[ -n "$KEYRING_PKG" ]] || die "Could not detect cachyos-keyring package from mirror listing."
 [[ -n "$MIRRORLIST_PKG" ]] || die "Could not detect cachyos-mirrorlist package from mirror listing."
-[[ -n "$V3_MIRRORLIST_PKG" ]] || die "Could not detect cachyos-v3-mirrorlist package from mirror listing."
 
 info "Downloading CachyOS bootstrap packages..."
 curl -fL "$CACHY_BASE_URL/$KEYRING_PKG" -o "$TMPDIR/$KEYRING_PKG"
 curl -fL "$CACHY_BASE_URL/$MIRRORLIST_PKG" -o "$TMPDIR/$MIRRORLIST_PKG"
-curl -fL "$CACHY_BASE_URL/$V3_MIRRORLIST_PKG" -o "$TMPDIR/$V3_MIRRORLIST_PKG"
 
-info "Installing CachyOS keyring/mirrorlists..."
+info "Installing CachyOS keyring/mirrorlist..."
 pacman -U --noconfirm \
   "$TMPDIR/$KEYRING_PKG" \
-  "$TMPDIR/$MIRRORLIST_PKG" \
-  "$TMPDIR/$V3_MIRRORLIST_PKG"
+  "$TMPDIR/$MIRRORLIST_PKG"
 
 # Insert repos above Arch repos
-if ! grep -q '^\[cachyos-v3\]' /etc/pacman.conf; then
-  info "Injecting CachyOS repo blocks into /etc/pacman.conf (above [core])"
+if ! grep -q '^\[cachyos\]' /etc/pacman.conf; then
+  info "Injecting CachyOS hybrid repo blocks into /etc/pacman.conf (above [core])"
   CACHY_SNIP=$(cat <<'EOF'
-# ---- CachyOS repos (forced x86-64-v3) ----
-[cachyos-v3]
-Include = /etc/pacman.d/cachyos-v3-mirrorlist
+# ---- CachyOS hybrid ----
+[cachyos]
+Include = /etc/pacman.d/cachyos-mirrorlist
 
-[cachyos-core-v3]
-Include = /etc/pacman.d/cachyos-v3-mirrorlist
+[cachyos-core]
+Include = /etc/pacman.d/cachyos-mirrorlist
 
-[cachyos-extra-v3]
-Include = /etc/pacman.d/cachyos-v3-mirrorlist
-# -----------------------------------------
+[cachyos-extra]
+Include = /etc/pacman.d/cachyos-mirrorlist
+# ------------------------
 EOF
 )
   awk -v snip="$CACHY_SNIP" '
@@ -183,13 +184,13 @@ else
   warn "CachyOS repos already present; not duplicating."
 fi
 
-info "Syncing databases..."
+info "Syncing package databases..."
 pacman -Syy --noconfirm
 
-# ---- NVIDIA userspace (CachyOS v3) -------------------------------------------
-info "Installing NVIDIA userspace (nvidia-utils + lib32) from CachyOS repos"
+# ---- NVIDIA userspace ---------------------------------------------------------
+info "Installing NVIDIA userspace (nvidia-utils + lib32-nvidia-utils)"
 pacman -S --noconfirm --needed nvidia-utils || die "Failed to install nvidia-utils"
-pacman -S --noconfirm --needed lib32-nvidia-utils || die "lib32-nvidia-utils install failed (check multilib)."
+pacman -S --noconfirm --needed lib32-nvidia-utils || die "Failed to install lib32-nvidia-utils (check multilib)."
 
 # ---- CachyOS kernel + nvidia-open modules ------------------------------------
 info "Installing CachyOS kernel + nvidia-open modules"
@@ -198,7 +199,7 @@ pacman -S --noconfirm --needed linux-cachyos linux-cachyos-headers
 if pacman -Si linux-cachyos-nvidia-open >/dev/null 2>&1; then
   pacman -S --noconfirm --needed linux-cachyos-nvidia-open
 else
-  warn "linux-cachyos-nvidia-open not found; you may need DKMS or different kernel flavor."
+  warn "linux-cachyos-nvidia-open not found in configured repos."
 fi
 
 # ---- mkinitcpio ---------------------------------------------------------------
