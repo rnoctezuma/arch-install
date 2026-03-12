@@ -4,7 +4,7 @@ set -euo pipefail
 # ==============================================================================
 # Step 04: Base Arch installation into /mnt
 # - uses pacstrap + genfstab
-# - mirror selection via reflector (VN/SG/JP/KR)
+# - uses default Arch mirrorlist from live ISO (no reflector)
 # - modifies /mnt/etc/pacman.conf (Color, ParallelDownloads, ILoveCandy)
 # ==============================================================================
 
@@ -45,21 +45,8 @@ fi
 info "Updating pacman keyring (live ISO)..."
 pacman -Sy --noconfirm archlinux-keyring || die "Failed to update keyring"
 
-info "Installing reflector (live ISO)..."
-pacman -S --noconfirm --needed reflector
-
-info "Selecting fastest mirrors (VN/SG/JP/KR)..."
-if ! reflector \
-  --country Vietnam,Singapore,Japan,South\ Korea \
-  --age 12 \
-  --protocol https \
-  --sort rate \
-  --latest 20 \
-  --save /etc/pacman.d/mirrorlist; then
-  warn "Reflector failed; continuing with current mirrorlist."
-else
-  info "Mirrorlist updated successfully."
-fi
+info "Refreshing package databases..."
+pacman -Syy
 
 info "Installing base system into /mnt..."
 pacstrap /mnt \
