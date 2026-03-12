@@ -58,7 +58,7 @@ pacstrap -K /mnt \
   sudo \
   intel-ucode \
   mkinitcpio \
-  iptables-nft
+  iptables-nft \
   --noconfirm --needed
 
 info "Optimizing pacman.conf in target system (/mnt/etc/pacman.conf)..."
