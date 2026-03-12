@@ -45,11 +45,19 @@ fi
 info "Updating pacman keyring (live ISO)..."
 pacman -Sy --noconfirm archlinux-keyring || die "Failed to update keyring"
 
+info "Writing a minimal fast mirrorlist for live ISO..."
+cat > /etc/pacman.d/mirrorlist <<'EOF'
+Server = https://mirrors.huongnguyen.dev/arch/$repo/os/$arch
+Server = https://mirrors.nguyenhoang.cloud/archlinux/$repo/os/$arch
+Server = https://download.nus.edu.sg/mirror/archlinux/$repo/os/$arch
+Server = https://mirror.aktkn.sg/archlinux/$repo/os/$arch
+EOF
+
 info "Refreshing package databases..."
-pacman -Syy
+pacman -Syy --noconfirm
 
 info "Installing base system into /mnt..."
-pacstrap -K /mnt \
+pacstrap -K -c /mnt \
   base \
   base-devel \
   linux-firmware \
@@ -57,9 +65,7 @@ pacstrap -K /mnt \
   networkmanager \
   sudo \
   intel-ucode \
-  mkinitcpio \
-  iptables-nft \
-  --noconfirm --needed
+  mkinitcpio
 
 info "Optimizing pacman.conf in target system (/mnt/etc/pacman.conf)..."
 TARGET_PACCONF="/mnt/etc/pacman.conf"
