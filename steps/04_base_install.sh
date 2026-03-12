@@ -49,7 +49,7 @@ info "Refreshing package databases..."
 pacman -Syy
 
 info "Installing base system into /mnt..."
-pacstrap /mnt \
+pacstrap -K /mnt \
   base \
   base-devel \
   linux-firmware \
@@ -57,7 +57,8 @@ pacstrap /mnt \
   networkmanager \
   sudo \
   intel-ucode \
-  mkinitcpio
+  mkinitcpio \
+  iptables-nft
 
 info "Optimizing pacman.conf in target system (/mnt/etc/pacman.conf)..."
 TARGET_PACCONF="/mnt/etc/pacman.conf"
@@ -69,7 +70,12 @@ grep -q '^ILoveCandy' "$TARGET_PACCONF" || sed -i '/^Color/a ILoveCandy' "$TARGE
 sed -i 's/^#VerbosePkgLists/VerbosePkgLists/' "$TARGET_PACCONF"
 
 info "Generating fstab..."
-genfstab -U /mnt > /mnt/etc/fstab
+genfstab -U /mnt >> /mnt/etc/fstab
+
+# Remove duplicate entries if script rerun
+awk '!seen[$0]++' /mnt/etc/fstab > /mnt/etc/fstab.new
+mv /mnt/etc/fstab.new /mnt/etc/fstab
+
 sync
 
 echo
