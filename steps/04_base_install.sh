@@ -15,7 +15,7 @@ warn() { echo "WARNING: $*" >&2; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
-  ec=$?
+  local ec=$?
   if (( ec != 0 )); then
     warn "Step 04 failed (exit code $ec)."
   fi
