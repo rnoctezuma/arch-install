@@ -33,6 +33,9 @@ require_cmd tee
 require_cmd date
 require_cmd mkdir
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STATE_DIR_TARGET="/mnt/root/arch-install-state"
+
 run_step_live() {
   local step="$1"
   local path="$SCRIPT_DIR/steps/$step"
@@ -101,9 +104,6 @@ mkdir -p /mnt/root /mnt/etc "$STATE_DIR_TARGET"
 for step in "${steps_live[@]}"; do
   run_step_live "$step"
 done
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STATE_DIR_TARGET="/mnt/root/arch-install-state"
 
 info "Copying installer state files into target system..."
 for f in /tmp/arch_disk /tmp/arch_mapper /tmp/arch_root_part; do
