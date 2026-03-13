@@ -57,7 +57,7 @@ info "Refreshing package databases..."
 pacman -Syy --noconfirm
 
 info "Installing base system into /mnt..."
-pacstrap -K -c /mnt \
+pacstrap -K /mnt \
   base \
   base-devel \
   linux \
