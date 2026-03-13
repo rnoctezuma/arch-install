@@ -99,11 +99,14 @@ run_step_chroot() {
 }
 
 info "Preparing target directories..."
-mkdir -p /mnt/root /mnt/etc "$STATE_DIR_TARGET"
+mkdir -p /mnt/root /mnt/etc
 
 for step in "${steps_live[@]}"; do
   run_step_live "$step"
 done
+
+info "Preparing installer state directory inside target system..."
+mkdir -p "$STATE_DIR_TARGET"
 
 info "Copying installer state files into target system..."
 for f in /tmp/arch_disk /tmp/arch_mapper /tmp/arch_root_part; do
