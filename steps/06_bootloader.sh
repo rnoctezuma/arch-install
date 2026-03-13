@@ -52,7 +52,7 @@ pacman -S --noconfirm --needed limine
 
 EFI_SRC="/usr/share/limine/BOOTX64.EFI"
 if [[ ! -f "$EFI_SRC" ]]; then
-  EFI_SRC="$(find /usr/share -maxdepth 4 -type f -iname 'bootx64.efi' 2>/dev/null | head -n 1 || true)"
+  EFI_SRC="$(find /usr/share -maxdepth 4 -type f -iname 'bootx64.efi' -print -quit 2>/dev/null || true)"
 fi
 [[ -f "${EFI_SRC:-}" ]] || die "BOOTX64.EFI not found after installing limine."
 
@@ -72,10 +72,11 @@ pick_first_existing() {
 }
 
 KERNEL_FILE="$(pick_first_existing \
-  vmlinuz-linux-cachyos \
+  vmlinuz-linux-zen \
   vmlinuz-linux \
+  vmlinuz-linux-lts \
 )"
-[[ -n "$KERNEL_FILE" ]] || die "No kernel found in /boot. Did step 05 install a kernel?"
+[[ -n "$KERNEL_FILE" ]] || die "No supported Arch kernel found in /boot. Did step 04 install one?"
 
 PRESET="${KERNEL_FILE#vmlinuz-}"
 INITRAMFS_FILE="initramfs-${PRESET}.img"

@@ -3,18 +3,14 @@ set -euo pipefail
 
 # ==============================================================================
 # Step 05: System configuration (RUN INSIDE arch-chroot /mnt)
-# Target: Intel + NVIDIA laptop (Lenovo Legion i7 Pro Gen10)
+# Target: vanilla Arch base configuration
 #
 # Key goals:
 # - Locale/timezone/users/sudo baseline
-# - Enable multilib (gaming)
-# - Add CachyOS repos in hybrid mode (no x86_64_v3 override)
-# - Install linux-cachyos + linux-cachyos-nvidia-open + headers
-# - Install nvidia-utils + lib32-nvidia-utils with matching driver stack
+# - Enable multilib
+# - Install baseline packages
 # - mkinitcpio: systemd initramfs + sd-encrypt
 # ==============================================================================
-
-TMPDIR=""
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
@@ -24,11 +20,6 @@ require_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing command: $1"; }
 
 cleanup_on_exit() {
   local ec=$?
-
-  if [[ -n "${TMPDIR:-}" && -d "${TMPDIR:-}" ]]; then
-    rm -rf "$TMPDIR" >/dev/null 2>&1 || true
-  fi
-
   if (( ec != 0 )); then
     warn "Step 05 failed (exit code $ec)."
   fi
@@ -43,12 +34,24 @@ require_cmd sed
 require_cmd locale-gen
 require_cmd mkinitcpio
 require_cmd systemctl
-require_cmd curl
 require_cmd awk
 require_cmd grep
-require_cmd sort
-require_cmd tail
-require_cmd pacman-key
+require_cmd hwclock
+require_cmd useradd
+require_cmd passwd
+require_cmd install
+
+set_mkinitcpio_var() {
+  local key="$1"
+  local value="$2"
+  local file="/etc/mkinitcpio.conf"
+
+  if grep -Eq "^[[:space:]]*${key}[[:space:]]*=" "$file"; then
+    sed -Ei "s|^[[:space:]]*${key}[[:space:]]*=.*|${key}=${value}|" "$file"
+  else
+    printf '\n%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
 
 # ---- Timezone / locale --------------------------------------------------------
 TIMEZONE="Asia/Ho_Chi_Minh"
@@ -83,7 +86,6 @@ info "Set root password"
 passwd
 
 info "Creating user"
-
 read -rp "Enter username (default: rnoct): " username
 username="${username:-rnoct}"
 
@@ -91,7 +93,12 @@ if ! [[ "$username" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
   die "Invalid username: $username"
 fi
 
-useradd -m -G wheel -s /bin/bash "$username"
+if id -u "$username" >/dev/null 2>&1; then
+  warn "User '$username' already exists; skipping useradd."
+else
+  useradd -m -G wheel -s /bin/bash "$username"
+fi
+
 passwd "$username"
 
 info "Enabling sudo for wheel group (sudoers.d)"
@@ -100,11 +107,11 @@ printf "%%wheel ALL=(ALL:ALL) ALL\n" > /etc/sudoers.d/10-wheel
 chmod 0440 /etc/sudoers.d/10-wheel
 
 # ---- pacman: multilib ---------------------------------------------------------
-info "Enabling multilib (needed for many gaming 32-bit libs)"
+info "Enabling multilib (needed for many 32-bit libraries)"
 if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
   awk '
-    BEGIN{done=0; inml=0}
-    /^\s*#\s*\[multilib\]\s*$/ {print "[multilib]"; inml=1; done=1; next}
+    BEGIN{inml=0}
+    /^\s*#\s*\[multilib\]\s*$/ {print "[multilib]"; inml=1; next}
     inml && /^\s*#\s*Include = \/etc\/pacman.d\/mirrorlist\s*$/ {sub(/^\s*#\s*/,""); print; inml=0; next}
     {print}
   ' /etc/pacman.conf > /etc/pacman.conf.new
@@ -112,102 +119,25 @@ if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
 fi
 
 # ---- Baseline packages --------------------------------------------------------
-info "Installing essential packages (baseline)"
+info "Refreshing package databases"
 pacman -Syy --noconfirm
 
+info "Installing essential packages"
 pacman -S --noconfirm --needed \
-  nano git htop fastfetch curl \
-  mesa vulkan-icd-loader \
+  nano \
+  git \
+  htop \
+  fastfetch \
+  mesa \
+  vulkan-icd-loader \
   dosfstools \
-  reflector pacman-contrib \
+  pacman-contrib \
   efibootmgr
-
-# ---- CachyOS repos: hybrid mode ----------------------------------------------
-info "Adding CachyOS repos (hybrid mode, no x86_64_v3 override)"
-
-# Ensure pacman keyring exists
-if [[ ! -d /etc/pacman.d/gnupg ]]; then
-  info "Initializing pacman keyring..."
-  pacman-key --init
-  pacman-key --populate archlinux
-fi
-
-# Download latest keyring + mirrorlist packages by parsing official mirror listing.
-CACHY_BASE_URL="https://mirror.cachyos.org/repo/x86_64/cachyos"
-TMPDIR="$(mktemp -d)"
-
-LISTING="$(curl -fsSL "$CACHY_BASE_URL/")" || die "Failed to fetch $CACHY_BASE_URL/"
-
-pick_latest() {
-  local pattern="$1"
-  echo "$LISTING" | grep -oE "$pattern" | sort -V | tail -n 1
-}
-
-KEYRING_PKG="$(pick_latest 'cachyos-keyring-[0-9]{8}-[0-9]+-any\.pkg\.tar\.zst')"
-MIRRORLIST_PKG="$(pick_latest 'cachyos-mirrorlist-[0-9]+-[0-9]+-any\.pkg\.tar\.zst')"
-
-[[ -n "$KEYRING_PKG" ]] || die "Could not detect cachyos-keyring package from mirror listing."
-[[ -n "$MIRRORLIST_PKG" ]] || die "Could not detect cachyos-mirrorlist package from mirror listing."
-
-info "Downloading CachyOS bootstrap packages..."
-curl -fL "$CACHY_BASE_URL/$KEYRING_PKG" -o "$TMPDIR/$KEYRING_PKG"
-curl -fL "$CACHY_BASE_URL/$MIRRORLIST_PKG" -o "$TMPDIR/$MIRRORLIST_PKG"
-
-info "Installing CachyOS keyring/mirrorlist..."
-pacman -U --noconfirm \
-  "$TMPDIR/$KEYRING_PKG" \
-  "$TMPDIR/$MIRRORLIST_PKG"
-
-# Insert repos above Arch repos
-if ! grep -q '^\[cachyos\]' /etc/pacman.conf; then
-  info "Injecting CachyOS hybrid repo blocks into /etc/pacman.conf (above [core])"
-  CACHY_SNIP=$(cat <<'EOF'
-# ---- CachyOS hybrid ----
-[cachyos]
-Include = /etc/pacman.d/cachyos-mirrorlist
-
-[cachyos-core]
-Include = /etc/pacman.d/cachyos-mirrorlist
-
-[cachyos-extra]
-Include = /etc/pacman.d/cachyos-mirrorlist
-# ------------------------
-EOF
-)
-  awk -v snip="$CACHY_SNIP" '
-    BEGIN{inserted=0}
-    /^\[core\]/{ if(inserted==0){print snip; inserted=1} }
-    {print}
-  ' /etc/pacman.conf > /etc/pacman.conf.new
-  mv /etc/pacman.conf.new /etc/pacman.conf
-else
-  warn "CachyOS repos already present; not duplicating."
-fi
-
-info "Syncing package databases..."
-pacman -Syy --noconfirm
-
-# ---- NVIDIA userspace ---------------------------------------------------------
-info "Installing NVIDIA userspace (nvidia-utils + lib32-nvidia-utils)"
-pacman -S --noconfirm --needed nvidia-utils || die "Failed to install nvidia-utils"
-pacman -S --noconfirm --needed lib32-nvidia-utils || die "Failed to install lib32-nvidia-utils (check multilib)."
-
-# ---- CachyOS kernel + nvidia-open modules ------------------------------------
-info "Installing CachyOS kernel + nvidia-open modules"
-pacman -S --noconfirm --needed linux-cachyos linux-cachyos-headers
-
-if pacman -Si linux-cachyos-nvidia-open >/dev/null 2>&1; then
-  pacman -S --noconfirm --needed linux-cachyos-nvidia-open
-else
-  warn "linux-cachyos-nvidia-open not found in configured repos."
-fi
 
 # ---- mkinitcpio ---------------------------------------------------------------
 info "Configuring mkinitcpio for systemd initramfs + sd-encrypt"
-sed -i 's/^MODULES=.*/MODULES=(btrfs nvme nvidia nvidia_modeset nvidia_uvm nvidia_drm)/' /etc/mkinitcpio.conf
-sed -i 's/^HOOKS=.*/HOOKS=(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)/' /etc/mkinitcpio.conf
-
-echo "options nvidia-drm modeset=1" > /etc/modprobe.d/nvidia.conf
+set_mkinitcpio_var MODULES '(btrfs nvme)'
+set_mkinitcpio_var HOOKS '(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)'
 
 info "Building initramfs for all presets"
 mkinitcpio -P

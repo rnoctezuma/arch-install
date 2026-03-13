@@ -72,7 +72,8 @@ CONF="/boot/EFI/BOOT/limine.conf"
 
 # ---- Kernel + initramfs detection (use current ESP kernel) --------------------
 pick_kernel() {
-  for f in vmlinuz-linux-cachyos vmlinuz-linux; do
+  local f
+  for f in vmlinuz-linux-zen vmlinuz-linux vmlinuz-linux-lts; do
     [[ -f "/boot/$f" ]] && { echo "$f"; return 0; }
   done
   return 1
