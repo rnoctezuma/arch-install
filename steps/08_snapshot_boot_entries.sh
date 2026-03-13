@@ -172,10 +172,10 @@ if [[ ${#SNAP_OK[@]} -eq 0 ]]; then
 
   NEWCONF="$(mktemp)"
   awk -v start="$START" -v end="$END" '
-    BEGIN{in=0}
-    $0==start {print; in=1; next}
-    in && $0==end {print; in=0; next}
-    in {next}
+    BEGIN{inside=0}
+    $0==start {print; inside=1; next}
+    inside && $0==end {print; inside=0; next}
+    inside {next}
     {print}
   ' "$CONF" > "$NEWCONF"
 
@@ -214,10 +214,10 @@ NEWCONF="$(mktemp)"
 
 if grep -qF "$START" "$CONF" && grep -qF "$END" "$CONF"; then
   awk -v start="$START" -v end="$END" -v block="$BLOCK" '
-    BEGIN{in=0}
-    $0==start {print; system("cat " block); in=1; next}
-    in && $0==end {print; in=0; next}
-    in {next}
+    BEGIN{inside=0}
+    $0==start {print; system("cat " block); inside=1; next}
+    inside && $0==end {print; inside=0; next}
+    inside {next}
     {print}
   ' "$CONF" > "$NEWCONF"
 else
