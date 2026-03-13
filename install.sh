@@ -11,7 +11,7 @@ info(){ echo "==> $*"; }
 warn(){ echo "WARNING: $*" >&2; }
 
 cleanup_on_exit() {
-  ec=$?
+  local ec=$?
   if (( ec == 0 )); then
     info "Installer finished successfully."
   else

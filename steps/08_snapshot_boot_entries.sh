@@ -10,11 +10,9 @@ set -euo pipefail
 #   # --- SNAPSHOT AUTO START ---
 #   # --- SNAPSHOT AUTO END ---
 #
-# IMPORTANT:
-# Installer state files may be available at /root/arch-install-state during install-time.
-# After reboot they may be absent, so this script supports:
-#   - using /root/arch-install-state/* when present (install-time)
-#   - fallback auto-detection at runtime via findmnt + cryptsetup + blkid
+# Installer state:
+# - During install-time, state files may exist in /root/arch-install-state
+# - After reboot, runtime auto-detection is used instead
 # ==============================================================================
 
 die(){ echo "ERROR: $*" >&2; exit 1; }
@@ -31,17 +29,27 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -n|--dry-run) DRYRUN=1; shift ;;
     -v|--verbose) VERBOSE=1; shift ;;
-    --keep) KEEP_N="${2:-}"; shift 2 ;;
-    *) die "Unknown argument: $1" ;;
+    --keep)
+      [[ $# -ge 2 ]] || die "--keep requires a numeric argument"
+      KEEP_N="${2:-}"
+      shift 2
+      ;;
+    *)
+      die "Unknown argument: $1"
+      ;;
   esac
 done
 
-logv(){ [[ $VERBOSE -eq 1 ]] && info "$*"; }
+logv() {
+  if [[ $VERBOSE -eq 1 ]]; then
+    info "$*"
+  fi
+  return 0
+}
 
 cleanup_on_exit() {
   local ec=$?
 
-  # Always cleanup temp files if defined
   if [[ -n "${BLOCK:-}" && -f "${BLOCK:-}" ]]; then
     rm -f "$BLOCK" >/dev/null 2>&1 || true
   fi
@@ -64,13 +72,17 @@ require_cmd awk
 require_cmd find
 require_cmd sort
 require_cmd mountpoint
+require_cmd grep
+require_cmd sync
+require_cmd mktemp
+require_cmd cat
 
 mountpoint -q /boot || die "/boot is not mounted (ESP missing)."
 
 CONF="/boot/EFI/BOOT/limine.conf"
 [[ -f "$CONF" ]] || die "limine.conf not found: $CONF"
 
-# ---- Kernel + initramfs detection (use current ESP kernel) --------------------
+# ---- Kernel + initramfs detection --------------------------------------------
 pick_kernel() {
   local f
   for f in vmlinuz-linux-zen vmlinuz-linux-lts; do
@@ -85,26 +97,26 @@ INITRAMFS_FILE="initramfs-${PRESET}.img"
 [[ -f "/boot/$INITRAMFS_FILE" ]] || die "Missing /boot/$INITRAMFS_FILE"
 
 UCODE_LINE=""
-[[ -f /boot/intel-ucode.img ]] && UCODE_LINE="    module_path: boot():/intel-ucode.img"
+if [[ -f /boot/intel-ucode.img ]]; then
+  UCODE_LINE="    module_path: boot():/intel-ucode.img"
+fi
 
 # ---- Mapper + LUKS UUID detection --------------------------------------------
+STATE_DIR="/root/arch-install-state"
 MAPPER=""
 CRYPT_UUID=""
-
-STATE_DIR="/root/arch-install-state"
 
 if [[ -f "${STATE_DIR}/arch_mapper" ]]; then
   MAPPER="$(< "${STATE_DIR}/arch_mapper")"
 fi
 
-if [[ -z "${MAPPER:-}" ]]; then
+if [[ -z "$MAPPER" ]]; then
   require_cmd findmnt
   src="$(findmnt -no SOURCE / || true)"
   [[ "$src" == /dev/mapper/* ]] || die "Cannot detect mapper from root mount SOURCE=$src"
   MAPPER="${src#/dev/mapper/}"
 fi
 
-# Preferred: installer state file if present (install-time)
 if [[ -f "${STATE_DIR}/arch_root_part" ]]; then
   require_cmd blkid
   ROOT_PART="$(< "${STATE_DIR}/arch_root_part")"
@@ -112,8 +124,7 @@ if [[ -f "${STATE_DIR}/arch_root_part" ]]; then
   CRYPT_UUID="$(blkid -s UUID -o value "$ROOT_PART" || true)"
 fi
 
-# Fallback runtime: cryptsetup status <mapper> -> underlying device -> blkid UUID
-if [[ -z "${CRYPT_UUID:-}" ]]; then
+if [[ -z "$CRYPT_UUID" ]]; then
   require_cmd cryptsetup
   require_cmd blkid
   dev="$(cryptsetup status "$MAPPER" 2>/dev/null | awk -F': ' '/device:/ {print $2; exit}' || true)"
@@ -121,7 +132,7 @@ if [[ -z "${CRYPT_UUID:-}" ]]; then
   CRYPT_UUID="$(blkid -s UUID -o value "$dev" || true)"
 fi
 
-[[ -n "${CRYPT_UUID:-}" ]] || die "Failed to detect LUKS UUID."
+[[ -n "$CRYPT_UUID" ]] || die "Failed to detect LUKS UUID."
 
 CMDLINE_BASE_PREFIX="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
 
@@ -147,17 +158,35 @@ mapfile -t SNAP_IDS < <(
     | sort -rV
 )
 
-# Filter to those that have "snapshot" dir (Snapper layout)
 SNAP_OK=()
 for id in "${SNAP_IDS[@]}"; do
   [[ -d "${SNAP_BASE}/${id}/snapshot" ]] || continue
   SNAP_OK+=("$id")
 done
 
+START="# --- SNAPSHOT AUTO START ---"
+END="# --- SNAPSHOT AUTO END ---"
+
 if [[ ${#SNAP_OK[@]} -eq 0 ]]; then
   info "No valid Snapper snapshots found under $SNAP_BASE."
-  # Still clear auto-block so stale entries don’t remain
-  sed -i '/# --- SNAPSHOT AUTO START ---/,/# --- SNAPSHOT AUTO END ---/d' "$CONF"
+
+  NEWCONF="$(mktemp)"
+  awk -v start="$START" -v end="$END" '
+    BEGIN{in=0}
+    $0==start {print; in=1; next}
+    in && $0==end {print; in=0; next}
+    in {next}
+    {print}
+  ' "$CONF" > "$NEWCONF"
+
+  if [[ $DRYRUN -eq 1 ]]; then
+    info "Dry-run: would clear snapshot entries in $CONF."
+    exit 0
+  fi
+
+  cat "$NEWCONF" > "$CONF"
+  sync
+  info "Snapshot entries cleared (no valid snapshots found)."
   exit 0
 fi
 
@@ -173,8 +202,6 @@ NEWCONF="$(mktemp)"
   echo "# Generated by steps/08_snapshot_boot_entries.sh"
   echo
   for id in "${SNAP_OK[@]}"; do
-    # Our install created a top-level subvolume named @snapshots mounted at /.snapshots
-    # So rootflags should point to: subvol=@snapshots/<id>/snapshot
     echo "/Arch Linux (snapshot #${id})"
     echo "    protocol: linux"
     echo "    kernel_path: boot():/${KERNEL_FILE}"
@@ -184,9 +211,6 @@ NEWCONF="$(mktemp)"
     echo
   done
 } > "$BLOCK"
-
-START="# --- SNAPSHOT AUTO START ---"
-END="# --- SNAPSHOT AUTO END ---"
 
 if grep -qF "$START" "$CONF" && grep -qF "$END" "$CONF"; then
   awk -v start="$START" -v end="$END" -v block="$BLOCK" '
