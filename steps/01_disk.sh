@@ -46,8 +46,15 @@ require_cmd awk
 require_cmd grep
 require_cmd tr
 require_cmd sync
+require_cmd umount
+require_cmd findmnt
+require_cmd wipefs
+require_cmd cryptsetup
+require_cmd dmsetup
+require_cmd sort
+require_cmd cut
 
-rm -f "$TMP_ARCH_DISK" 2>/dev/null || true
+rm -f "$TMP_ARCH_DISK" "$TMP_ARCH_ROOT_PART" 2>/dev/null || true
 
 echo "===================================="
 echo "Arch Installer - Disk Partitioning"

@@ -10,9 +10,10 @@ set -euo pipefail
 #   # --- SNAPSHOT AUTO START ---
 #   # --- SNAPSHOT AUTO END ---
 #
-# IMPORTANT: /tmp/arch_* files do NOT survive reboot.
-# This script therefore supports:
-#   - using /tmp/arch_* when present (install-time)
+# IMPORTANT:
+# Installer state files may be available at /root/arch-install-state during install-time.
+# After reboot they may be absent, so this script supports:
+#   - using /root/arch-install-state/* when present (install-time)
 #   - fallback auto-detection at runtime via findmnt + cryptsetup + blkid
 # ==============================================================================
 
@@ -90,8 +91,10 @@ UCODE_LINE=""
 MAPPER=""
 CRYPT_UUID=""
 
-if [[ -f /tmp/arch_mapper ]]; then
-  MAPPER="$(< /tmp/arch_mapper)"
+STATE_DIR="/root/arch-install-state"
+
+if [[ -f "${STATE_DIR}/arch_mapper" ]]; then
+  MAPPER="$(< "${STATE_DIR}/arch_mapper")"
 fi
 
 if [[ -z "${MAPPER:-}" ]]; then
@@ -101,11 +104,11 @@ if [[ -z "${MAPPER:-}" ]]; then
   MAPPER="${src#/dev/mapper/}"
 fi
 
-# Preferred: /tmp/arch_root_part if present (install-time)
-if [[ -f /tmp/arch_root_part ]]; then
+# Preferred: installer state file if present (install-time)
+if [[ -f "${STATE_DIR}/arch_root_part" ]]; then
   require_cmd blkid
-  ROOT_PART="$(< /tmp/arch_root_part)"
-  [[ -b "$ROOT_PART" ]] || die "Root partition from /tmp not found: $ROOT_PART"
+  ROOT_PART="$(< "${STATE_DIR}/arch_root_part")"
+  [[ -b "$ROOT_PART" ]] || die "Root partition from ${STATE_DIR} not found: $ROOT_PART"
   CRYPT_UUID="$(blkid -s UUID -o value "$ROOT_PART" || true)"
 fi
 

@@ -29,8 +29,10 @@ require_cmd efibootmgr
 require_cmd mountpoint
 mountpoint -q /boot || die "/boot not mounted."
 
-[[ -f /tmp/arch_disk ]] || die "Missing /tmp/arch_disk"
-DISK="$(< /tmp/arch_disk)"
+STATE_DIR="/root/arch-install-state"
+
+[[ -f "${STATE_DIR}/arch_disk" ]] || die "Missing ${STATE_DIR}/arch_disk"
+DISK="$(< "${STATE_DIR}/arch_disk")"
 [[ -b "$DISK" ]] || die "Disk not found: $DISK"
 
 LABEL="Arch Linux (Limine)"

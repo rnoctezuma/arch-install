@@ -28,10 +28,13 @@ trap cleanup_on_exit EXIT
 [[ -f /etc/arch-release ]] || die "Run inside installed system."
 
 require_cmd pacman
-require_cmd snapper || true
-require_cmd btrfs || true
 require_cmd systemctl
-require_cmd mkdir
+require_cmd mountpoint
+require_cmd mount
+require_cmd install
+require_cmd sed
+require_cmd awk
+require_cmd grep
 require_cmd chmod
 require_cmd cat
 

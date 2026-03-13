@@ -4,7 +4,7 @@ set -euo pipefail
 # ==============================================================================
 # Step 04: Base Arch installation into /mnt
 # - uses pacstrap + genfstab
-# - uses default Arch mirrorlist from live ISO (no reflector)
+# - writes a small custom mirrorlist for the live ISO (no reflector)
 # - modifies /mnt/etc/pacman.conf (Color, ParallelDownloads, ILoveCandy)
 # ==============================================================================
 

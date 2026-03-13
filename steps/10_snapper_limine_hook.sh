@@ -34,15 +34,18 @@ trap cleanup_on_exit EXIT
 require_cmd install
 require_cmd chmod
 require_cmd cat
-require_cmd flock || true
+require_cmd flock
 
 # Persist the generator script (it was copied into /root by install.sh)
-if [[ -f /root/08_snapshot_boot_entries.sh ]]; then
+STATE_DIR="/root/arch-install-state"
+GENERATOR_SRC="${STATE_DIR}/08_snapshot_boot_entries.sh"
+
+if [[ -f "$GENERATOR_SRC" ]]; then
   install -d -m 0755 /usr/local/sbin
-  install -m 0755 /root/08_snapshot_boot_entries.sh /usr/local/sbin/08_snapshot_boot_entries.sh
+  install -m 0755 "$GENERATOR_SRC" /usr/local/sbin/08_snapshot_boot_entries.sh
   info "Installed persistent generator: /usr/local/sbin/08_snapshot_boot_entries.sh"
 else
-  warn "/root/08_snapshot_boot_entries.sh not found. Generator will not be installed persistently."
+  warn "${GENERATOR_SRC} not found. Generator will not be installed persistently."
 fi
 
 # Wrapper (never fails hard)

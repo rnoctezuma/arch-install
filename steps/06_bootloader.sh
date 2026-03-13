@@ -35,12 +35,14 @@ require_cmd sync
 
 mountpoint -q /boot || die "/boot is not mounted (ESP missing)."
 
-# State files copied by install.sh into chroot /tmp
-[[ -f /tmp/arch_mapper ]] || die "Missing /tmp/arch_mapper"
-[[ -f /tmp/arch_root_part ]] || die "Missing /tmp/arch_root_part"
+STATE_DIR="/root/arch-install-state"
 
-MAPPER="$(< /tmp/arch_mapper)"
-ROOT_PART="$(< /tmp/arch_root_part)"
+[[ -f "${STATE_DIR}/arch_mapper" ]] || die "Missing ${STATE_DIR}/arch_mapper"
+[[ -f "${STATE_DIR}/arch_root_part" ]] || die "Missing ${STATE_DIR}/arch_root_part"
+
+MAPPER="$(< "${STATE_DIR}/arch_mapper")"
+ROOT_PART="$(< "${STATE_DIR}/arch_root_part")"
+
 [[ -n "$MAPPER" ]] || die "Mapper name empty."
 [[ -b "$ROOT_PART" ]] || die "Root partition not found: $ROOT_PART"
 
@@ -83,6 +85,27 @@ FALLBACK_INITRAMFS_FILE="initramfs-${PRESET}-fallback.img"
 
 [[ -f "/boot/$INITRAMFS_FILE" ]] || die "Missing /boot/$INITRAMFS_FILE"
 
+EXTRA_LTS_BLOCK=""
+if [[ "$KERNEL_FILE" != "vmlinuz-linux-lts" && -f /boot/vmlinuz-linux-lts && -f /boot/initramfs-linux-lts.img ]]; then
+  EXTRA_LTS_BLOCK=$(cat <<EOF
+/Arch Linux (linux-lts)
+    protocol: linux
+    kernel_path: boot():/vmlinuz-linux-lts
+${UCODE_LINE}
+    module_path: boot():/initramfs-linux-lts.img
+    cmdline: ${CMDLINE_BASE}
+
+/Arch Linux (linux-lts, fallback initramfs)
+    protocol: linux
+    kernel_path: boot():/vmlinuz-linux-lts
+${UCODE_LINE}
+    module_path: boot():/$( [[ -f /boot/initramfs-linux-lts-fallback.img ]] && echo initramfs-linux-lts-fallback.img || echo initramfs-linux-lts.img )
+    cmdline: root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw
+
+EOF
+)
+fi
+
 UCODE_LINE=""
 if [[ -f /boot/intel-ucode.img ]]; then
   UCODE_LINE="    module_path: boot():/intel-ucode.img"
@@ -121,6 +144,8 @@ ${UCODE_LINE}
 ${UCODE_LINE}
     module_path: boot():/${INITRAMFS_FILE}
     cmdline: root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw systemd.unit=emergency.target
+
+${EXTRA_LTS_BLOCK}
 
 # --- SNAPSHOT AUTO START ---
 # (Step 08 will replace the block between START/END)
