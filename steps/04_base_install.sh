@@ -60,8 +60,8 @@ info "Installing base system into /mnt..."
 pacstrap -K /mnt \
   base \
   base-devel \
-  linux \
   linux-zen \
+  linux-lts \
   linux-firmware \
   btrfs-progs \
   networkmanager \

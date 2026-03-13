@@ -73,7 +73,6 @@ pick_first_existing() {
 
 KERNEL_FILE="$(pick_first_existing \
   vmlinuz-linux-zen \
-  vmlinuz-linux \
   vmlinuz-linux-lts \
 )"
 [[ -n "$KERNEL_FILE" ]] || die "No supported Arch kernel found in /boot. Did step 04 install one?"

@@ -62,7 +62,6 @@ require_cmd sed
 require_cmd awk
 require_cmd find
 require_cmd sort
-require_cmd head
 require_cmd mountpoint
 
 mountpoint -q /boot || die "/boot is not mounted (ESP missing)."
@@ -73,7 +72,7 @@ CONF="/boot/EFI/BOOT/limine.conf"
 # ---- Kernel + initramfs detection (use current ESP kernel) --------------------
 pick_kernel() {
   local f
-  for f in vmlinuz-linux-zen vmlinuz-linux vmlinuz-linux-lts; do
+  for f in vmlinuz-linux-zen vmlinuz-linux-lts; do
     [[ -f "/boot/$f" ]] && { echo "$f"; return 0; }
   done
   return 1
