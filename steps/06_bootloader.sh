@@ -125,8 +125,8 @@ cat > "$LIMINE_CONF" <<EOF
 # Limine v10 configuration (UEFI)
 # Location: /EFI/BOOT/limine.conf (highest priority for EFI-booted Limine)
 
-timeout: 1
-quiet: yes
+timeout: 3
+quiet:no
 editor_enabled: no
 
 /Arch Linux (${PRESET})
