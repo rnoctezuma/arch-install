@@ -86,6 +86,12 @@ FALLBACK_INITRAMFS_FILE="initramfs-${PRESET}-fallback.img"
 [[ -f "/boot/$INITRAMFS_FILE" ]] || die "Missing /boot/$INITRAMFS_FILE"
 
 EXTRA_LTS_BLOCK=""
+UCODE_LINE=""
+
+if [[ -f /boot/intel-ucode.img ]]; then
+  UCODE_LINE="    module_path: boot():/intel-ucode.img"
+fi
+
 if [[ "$KERNEL_FILE" != "vmlinuz-linux-lts" && -f /boot/vmlinuz-linux-lts && -f /boot/initramfs-linux-lts.img ]]; then
   EXTRA_LTS_BLOCK=$(cat <<EOF
 /Arch Linux (linux-lts)
@@ -104,11 +110,6 @@ ${UCODE_LINE}
 
 EOF
 )
-fi
-
-UCODE_LINE=""
-if [[ -f /boot/intel-ucode.img ]]; then
-  UCODE_LINE="    module_path: boot():/intel-ucode.img"
 fi
 
 CMDLINE_BASE="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
