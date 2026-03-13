@@ -5,7 +5,8 @@ set -euo pipefail
 # Step 09: Snapper initial setup + pacman hooks (pre/post snapshots)
 # Runs inside installed system.
 #
-# - Creates config "root" for /
+# - Uses existing /.snapshots mount created by our Btrfs layout
+# - Creates config "root" manually if missing
 # - Enables snapper timeline + cleanup timers (enable only; don't --now in chroot)
 # - Adds pacman hooks creating proper pre/post pairs (stores pre-number in /var)
 # ==============================================================================
@@ -38,6 +39,18 @@ require_cmd grep
 require_cmd chmod
 require_cmd cat
 
+set_snapper_var() {
+  local key="$1"
+  local value="$2"
+  local file="$3"
+
+  if grep -Eq "^${key}=" "$file"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
 info "Installing snapper..."
 pacman -S --noconfirm --needed snapper
 
@@ -51,27 +64,39 @@ if ! mountpoint -q /.snapshots; then
 fi
 mountpoint -q /.snapshots || die "/.snapshots is not mounted. Check fstab/subvol layout."
 
-# Create snapper config (no DBus in chroot)
-if ! snapper --no-dbus list-configs 2>/dev/null | awk '{print $1}' | grep -qx root; then
-  info "Creating snapper config 'root' for /"
-  snapper --no-dbus -c root create-config /
+CONFIG="/etc/snapper/configs/root"
+TEMPLATE="/etc/snapper/config-templates/default"
+
+# Create snapper config manually because /.snapshots already exists as our own subvolume
+if [[ ! -f "$CONFIG" ]]; then
+  info "Creating snapper config 'root' manually for existing /.snapshots layout..."
+  install -d -m 0755 /etc/snapper/configs
+
+  if [[ -f "$TEMPLATE" ]]; then
+    cat "$TEMPLATE" > "$CONFIG"
+  else
+    : > "$CONFIG"
+  fi
+
+  set_snapper_var SUBVOLUME '"/"' "$CONFIG"
+  set_snapper_var FSTYPE '"btrfs"' "$CONFIG"
+  set_snapper_var QGROUP '""' "$CONFIG"
 else
   warn "Snapper config 'root' already exists."
 fi
 
-CONFIG="/etc/snapper/configs/root"
 [[ -f "$CONFIG" ]] || die "Snapper config not found: $CONFIG"
 
 info "Configuring snapper timeline retention..."
-# Conservative defaults (tune later)
-sed -i 's/^TIMELINE_CREATE=.*/TIMELINE_CREATE="yes"/' "$CONFIG"
-sed -i 's/^TIMELINE_CLEANUP=.*/TIMELINE_CLEANUP="yes"/' "$CONFIG"
-sed -i 's/^TIMELINE_LIMIT_HOURLY=.*/TIMELINE_LIMIT_HOURLY="4"/' "$CONFIG"
-sed -i 's/^TIMELINE_LIMIT_DAILY=.*/TIMELINE_LIMIT_DAILY="5"/' "$CONFIG"
-sed -i 's/^TIMELINE_LIMIT_WEEKLY=.*/TIMELINE_LIMIT_WEEKLY="3"/' "$CONFIG"
-sed -i 's/^TIMELINE_LIMIT_MONTHLY=.*/TIMELINE_LIMIT_MONTHLY="1"/' "$CONFIG"
-sed -i 's/^NUMBER_CLEANUP=.*/NUMBER_CLEANUP="yes"/' "$CONFIG"
-sed -i 's/^NUMBER_LIMIT=.*/NUMBER_LIMIT="20"/' "$CONFIG"
+# Keep current chosen values
+set_snapper_var TIMELINE_CREATE '"yes"' "$CONFIG"
+set_snapper_var TIMELINE_CLEANUP '"yes"' "$CONFIG"
+set_snapper_var TIMELINE_LIMIT_HOURLY '"4"' "$CONFIG"
+set_snapper_var TIMELINE_LIMIT_DAILY '"5"' "$CONFIG"
+set_snapper_var TIMELINE_LIMIT_WEEKLY '"3"' "$CONFIG"
+set_snapper_var TIMELINE_LIMIT_MONTHLY '"1"' "$CONFIG"
+set_snapper_var NUMBER_CLEANUP '"yes"' "$CONFIG"
+set_snapper_var NUMBER_LIMIT '"20"' "$CONFIG"
 
 info "Enabling snapper timers (enable only in chroot)..."
 systemctl enable snapper-timeline.timer
@@ -93,12 +118,10 @@ TMP="$(mktemp)"
 
 SNAPNUM="$(snapper --no-dbus -c root create -t pre -p -d "pacman pre" -c number)"
 
-# Validate number
 if [[ ! "$SNAPNUM" =~ ^[0-9]+$ ]]; then
   exit 0
 fi
 
-# Store number + timestamp
 echo "$SNAPNUM $(date +%s)" > "$TMP"
 mv -f "$TMP" "$STATE"
 EOF
@@ -117,20 +140,17 @@ read -r PRENUM PRETS < "$STATE" || {
   exit 0
 }
 
-# Validate number
 if [[ ! "$PRENUM" =~ ^[0-9]+$ ]]; then
   rm -f "$STATE"
   exit 0
 fi
 
-# Validate timestamp (max age 1 hour)
 NOW="$(date +%s)"
 MAX_AGE=3600
 
 if [[ -n "${PRETS:-}" && "$PRETS" =~ ^[0-9]+$ ]]; then
   AGE=$(( NOW - PRETS ))
 
-  # Clock skew protection (RTC changed backwards)
   if (( AGE < 0 )); then
     rm -f "$STATE"
     exit 0
@@ -142,7 +162,6 @@ if [[ -n "${PRETS:-}" && "$PRETS" =~ ^[0-9]+$ ]]; then
   fi
 fi
 
-# Check snapshot exists and is type pre
 if ! snapper --no-dbus -c root list \
     | awk -v n="$PRENUM" '$1 == n && $3 == "pre" {found=1} END{exit !found}'
 then
