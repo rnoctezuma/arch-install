@@ -32,6 +32,8 @@ require_cmd blkid
 require_cmd find
 require_cmd mountpoint
 require_cmd sync
+require_cmd cp
+require_cmd mkdir
 
 mountpoint -q /boot || die "/boot is not mounted (ESP missing)."
 
@@ -92,6 +94,10 @@ if [[ -f /boot/intel-ucode.img ]]; then
   UCODE_LINE="    module_path: boot():/intel-ucode.img"
 fi
 
+CMDLINE_BASE="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
+CMDLINE_FALLBACK="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw"
+CMDLINE_RESCUE="${CMDLINE_FALLBACK} systemd.unit=emergency.target"
+
 if [[ "$KERNEL_FILE" != "vmlinuz-linux-lts" && -f /boot/vmlinuz-linux-lts && -f /boot/initramfs-linux-lts.img ]]; then
   EXTRA_LTS_BLOCK=$(cat <<EOF
 /Arch Linux (linux-lts)
@@ -106,13 +112,11 @@ ${UCODE_LINE}
     kernel_path: boot():/vmlinuz-linux-lts
 ${UCODE_LINE}
     module_path: boot():/$( [[ -f /boot/initramfs-linux-lts-fallback.img ]] && echo initramfs-linux-lts-fallback.img || echo initramfs-linux-lts.img )
-    cmdline: root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw
+    cmdline: ${CMDLINE_FALLBACK}
 
 EOF
 )
 fi
-
-CMDLINE_BASE="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
 
 LIMINE_CONF="${ESP_EFI_DIR}/limine.conf"
 info "Writing Limine v10 config to $LIMINE_CONF"
@@ -137,14 +141,14 @@ ${UCODE_LINE}
     kernel_path: boot():/${KERNEL_FILE}
 ${UCODE_LINE}
     module_path: boot():/$( [[ -f "/boot/$FALLBACK_INITRAMFS_FILE" ]] && echo "$FALLBACK_INITRAMFS_FILE" || echo "$INITRAMFS_FILE" )
-    cmdline: root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw
+    cmdline: ${CMDLINE_FALLBACK}
 
 /Arch Linux (rescue)
     protocol: linux
     kernel_path: boot():/${KERNEL_FILE}
 ${UCODE_LINE}
     module_path: boot():/${INITRAMFS_FILE}
-    cmdline: root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw systemd.unit=emergency.target
+    cmdline: ${CMDLINE_RESCUE}
 
 ${EXTRA_LTS_BLOCK}
 
