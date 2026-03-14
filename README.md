@@ -36,6 +36,17 @@ pacman -Sy --noconfirm git
 
 git clone https://github.com/rnoctezuma/arch-install
 cd arch-install
+
+
+### WIFI
+на установленной системе
+
+nmcli radio wifi on
+nmcli device wifi list
+sudo nmcli device wifi connect "ИМЯ_СЕТИ" password "ПАРОЛЬ"
+ip a
+ping -c 2 1.1.1.1
+ping -c 2 archlinux.org
 chmod +x install.sh
 
 ./install.sh
