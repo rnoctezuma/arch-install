@@ -27,7 +27,8 @@ cleanup_on_exit() {
 trap cleanup_on_exit EXIT
 
 [[ ${EUID:-0} -eq 0 ]] || die "Run as root (inside chroot)."
-[[ -f /etc/arch-release ]] || die "Not inside target system (arch-chroot missing)."
+[[ -r /etc/os-release ]] || die "Cannot read /etc/os-release."
+grep -q '^ID=arch$' /etc/os-release || die "Not inside target Arch system (arch-chroot missing)."
 
 require_cmd pacman
 require_cmd sed
@@ -36,6 +37,7 @@ require_cmd mkinitcpio
 require_cmd systemctl
 require_cmd awk
 require_cmd grep
+require_cmd find
 require_cmd hwclock
 require_cmd useradd
 require_cmd passwd
@@ -139,6 +141,12 @@ pacman -S --noconfirm --needed \
 info "Configuring mkinitcpio for systemd initramfs + sd-encrypt"
 set_mkinitcpio_var MODULES '(btrfs nvme)'
 set_mkinitcpio_var HOOKS '(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)'
+
+info "Enabling mkinitcpio fallback presets for installed kernels"
+while IFS= read -r preset; do
+  [[ -f "$preset" ]] || continue
+  sed -i "s/^PRESETS=('default')/PRESETS=('default' 'fallback')/" "$preset"
+done < <(find /etc/mkinitcpio.d -maxdepth 1 -type f \( -name 'linux-*.preset' -o -name 'linux*.preset' \))
 
 info "Building initramfs for all presets"
 mkinitcpio -P

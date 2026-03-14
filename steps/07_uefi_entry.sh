@@ -22,11 +22,14 @@ cleanup_on_exit() {
 trap cleanup_on_exit EXIT
 
 [[ ${EUID:-0} -eq 0 ]] || die "Run as root."
-[[ -f /etc/arch-release ]] || die "Run inside installed system (chroot)."
+[[ -r /etc/os-release ]] || die "Cannot read /etc/os-release."
+grep -q '^ID=arch$' /etc/os-release || die "Run inside installed Arch system (chroot)."
 [[ -d /sys/firmware/efi/efivars ]] || die "UEFI mode required."
 
 require_cmd efibootmgr
 require_cmd mountpoint
+require_cmd grep
+
 mountpoint -q /boot || die "/boot not mounted."
 
 STATE_DIR="/root/arch-install-state"

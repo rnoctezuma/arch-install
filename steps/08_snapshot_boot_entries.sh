@@ -64,7 +64,8 @@ cleanup_on_exit() {
 trap cleanup_on_exit EXIT
 
 [[ ${EUID:-0} -eq 0 ]] || die "Run as root."
-[[ -f /etc/arch-release ]] || die "Run inside installed system."
+[[ -r /etc/os-release ]] || die "Cannot read /etc/os-release."
+grep -q '^ID=arch$' /etc/os-release || die "Run inside installed Arch system."
 [[ -d /sys/firmware/efi/efivars ]] || die "UEFI mode required."
 
 require_cmd sed

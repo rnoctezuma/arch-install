@@ -24,7 +24,8 @@ cleanup_on_exit() {
 trap cleanup_on_exit EXIT
 
 [[ ${EUID:-0} -eq 0 ]] || die "Run as root (inside chroot)."
-[[ -f /etc/arch-release ]] || die "Not inside installed system."
+[[ -r /etc/os-release ]] || die "Cannot read /etc/os-release."
+grep -q '^ID=arch$' /etc/os-release || die "Not inside installed Arch system."
 [[ -d /sys/firmware/efi/efivars ]] || die "UEFI mode required (/sys/firmware/efi/efivars missing)."
 
 require_cmd pacman
@@ -34,6 +35,7 @@ require_cmd mountpoint
 require_cmd sync
 require_cmd cp
 require_cmd mkdir
+require_cmd grep
 
 mountpoint -q /boot || die "/boot is not mounted (ESP missing)."
 
@@ -86,6 +88,9 @@ INITRAMFS_FILE="initramfs-${PRESET}.img"
 FALLBACK_INITRAMFS_FILE="initramfs-${PRESET}-fallback.img"
 
 [[ -f "/boot/$INITRAMFS_FILE" ]] || die "Missing /boot/$INITRAMFS_FILE"
+if [[ ! -f "/boot/$FALLBACK_INITRAMFS_FILE" ]]; then
+  warn "Missing /boot/$FALLBACK_INITRAMFS_FILE, fallback entry will use regular initramfs."
+fi
 
 EXTRA_LTS_BLOCK=""
 UCODE_LINE=""
@@ -126,7 +131,7 @@ cat > "$LIMINE_CONF" <<EOF
 # Location: /EFI/BOOT/limine.conf (highest priority for EFI-booted Limine)
 
 timeout: 3
-quiet:no
+quiet: no
 editor_enabled: no
 
 /Arch Linux (${PRESET})

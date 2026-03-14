@@ -6,7 +6,7 @@ set -euo pipefail
 # Runs inside installed system.
 #
 # - Uses existing /.snapshots mount created by our Btrfs layout
-# - Creates config "root" manually if missing
+# - Creates config "root" manually if missing and registers it in /etc/conf.d/snapper
 # - Enables snapper timeline + cleanup timers (enable only; don't --now in chroot)
 # - Adds pacman hooks creating proper pre/post pairs (stores pre-number in /var)
 # ==============================================================================
@@ -26,7 +26,8 @@ cleanup_on_exit() {
 trap cleanup_on_exit EXIT
 
 [[ ${EUID:-0} -eq 0 ]] || die "Run as root."
-[[ -f /etc/arch-release ]] || die "Run inside installed system."
+[[ -r /etc/os-release ]] || die "Cannot read /etc/os-release."
+grep -q '^ID=arch$' /etc/os-release || die "Run inside installed Arch system."
 
 require_cmd pacman
 require_cmd systemctl
@@ -38,6 +39,10 @@ require_cmd awk
 require_cmd grep
 require_cmd chmod
 require_cmd cat
+require_cmd date
+require_cmd mv
+require_cmd rm
+require_cmd mktemp
 
 set_snapper_var() {
   local key="$1"
@@ -66,6 +71,7 @@ mountpoint -q /.snapshots || die "/.snapshots is not mounted. Check fstab/subvol
 
 CONFIG="/etc/snapper/configs/root"
 TEMPLATE="/etc/snapper/config-templates/default"
+SNAPPER_GLOBAL="/etc/conf.d/snapper"
 
 # Create snapper config manually because /.snapshots already exists as our own subvolume
 if [[ ! -f "$CONFIG" ]]; then
@@ -86,6 +92,17 @@ else
 fi
 
 [[ -f "$CONFIG" ]] || die "Snapper config not found: $CONFIG"
+
+info "Registering snapper config in /etc/conf.d/snapper"
+if [[ -f "$SNAPPER_GLOBAL" ]]; then
+  if grep -Eq '^SNAPPER_CONFIGS=' "$SNAPPER_GLOBAL"; then
+    sed -Ei 's/^SNAPPER_CONFIGS=.*/SNAPPER_CONFIGS="root"/' "$SNAPPER_GLOBAL"
+  else
+    printf '\nSNAPPER_CONFIGS="root"\n' >> "$SNAPPER_GLOBAL"
+  fi
+else
+  printf 'SNAPPER_CONFIGS="root"\n' > "$SNAPPER_GLOBAL"
+fi
 
 info "Configuring snapper timeline retention..."
 # Keep current chosen values
