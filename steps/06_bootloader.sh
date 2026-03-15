@@ -99,8 +99,8 @@ if [[ -f /boot/intel-ucode.img ]]; then
   UCODE_LINE="    module_path: boot():/intel-ucode.img"
 fi
 
-CMDLINE_BASE="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
-CMDLINE_FALLBACK="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw"
+CMDLINE_BASE="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0 nvidia-drm.modeset=1"
+CMDLINE_FALLBACK="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rootflags=subvol=@ rw nvidia-drm.modeset=1"
 CMDLINE_RESCUE="${CMDLINE_FALLBACK} systemd.unit=emergency.target"
 
 if [[ "$KERNEL_FILE" != "vmlinuz-linux-lts" && -f /boot/vmlinuz-linux-lts && -f /boot/initramfs-linux-lts.img ]]; then

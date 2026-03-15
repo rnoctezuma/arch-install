@@ -135,7 +135,7 @@ fi
 
 [[ -n "$CRYPT_UUID" ]] || die "Failed to detect LUKS UUID."
 
-CMDLINE_BASE_PREFIX="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0"
+CMDLINE_BASE_PREFIX="root=/dev/mapper/${MAPPER} rd.luks.name=${CRYPT_UUID}=${MAPPER} rd.luks.options=${CRYPT_UUID}=discard rw quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0 nvidia-drm.modeset=1"
 
 logv "Kernel: $KERNEL_FILE"
 logv "Initramfs: $INITRAMFS_FILE"

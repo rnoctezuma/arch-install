@@ -135,11 +135,18 @@ pacman -S --noconfirm --needed \
   vulkan-icd-loader \
   dosfstools \
   pacman-contrib \
-  efibootmgr
+  efibootmgr \
+  dkms \
+  linux-zen-headers \
+  linux-lts-headers \
+  nvidia-open-dkms \
+  nvidia-utils \
+  lib32-nvidia-utils \
+  nvidia-settings
 
 # ---- mkinitcpio ---------------------------------------------------------------
 info "Configuring mkinitcpio for systemd initramfs + sd-encrypt"
-set_mkinitcpio_var MODULES '(btrfs nvme)'
+set_mkinitcpio_var MODULES '(btrfs nvme nvidia nvidia_modeset nvidia_uvm nvidia_drm)'
 set_mkinitcpio_var HOOKS '(base systemd autodetect microcode modconf kms keyboard sd-vconsole block sd-encrypt filesystems fsck)'
 
 info "Enabling mkinitcpio fallback presets for installed kernels"
