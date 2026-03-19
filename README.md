@@ -32,6 +32,7 @@ cd arch-install
 
 python -m legion_installer guided -- interactive installation
 python -m legion_installer install --config examples/profile.json --credentials examples/credentials.json -- config installation (stored in examples folder)
+```
 
 # Legion Arch Installer
 
