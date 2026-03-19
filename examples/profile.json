@@ -1,0 +1,110 @@
+{
+  "hardware": {
+    "name": "Lenovo Legion i7 Pro Gen 10",
+    "cpu": "Intel Core Ultra 9 275HX",
+    "gpu": "NVIDIA GeForce RTX 5080 Laptop GPU",
+    "ram": "32GB DDR5",
+    "storage": "1TB NVMe Gen 5",
+    "wifi": "Intel Wi-Fi 7"
+  },
+  "disk": {
+    "device": "/dev/nvme0n1",
+    "esp_start": "1MiB",
+    "esp_end": "4097MiB",
+    "esp_label": "EFI",
+    "root_label": "ROOT",
+    "force": false
+  },
+  "luks": {
+    "mapper_name": "cryptroot",
+    "pbkdf_memory_kib": 262144,
+    "iter_time_ms": 2000,
+    "cipher": "aes-xts-plain64",
+    "key_size": 512,
+    "hash_name": "sha512",
+    "pbkdf": "argon2id",
+    "allow_discards": true
+  },
+  "btrfs": {
+    "filesystem_label": "arch",
+    "subvolumes": ["@", "@home", "@log", "@cache", "@snapshots"],
+    "mount_options": [
+      "noatime",
+      "compress=zstd:1",
+      "space_cache=v2",
+      "discard=async",
+      "commit=120"
+    ]
+  },
+  "system": {
+    "timezone": "Asia/Ho_Chi_Minh",
+    "locale": "en_US.UTF-8",
+    "keymap": "us",
+    "hostname": "arch",
+    "username": "rnoct",
+    "shell": "/bin/bash",
+    "enable_multilib": true
+  },
+  "packages": {
+    "mirrorlist": [
+      "https://mirrors.huongnguyen.dev/arch/$repo/os/$arch",
+      "https://mirrors.nguyenhoang.cloud/archlinux/$repo/os/$arch",
+      "https://download.nus.edu.sg/mirror/archlinux/$repo/os/$arch",
+      "https://mirror.aktkn.sg/archlinux/$repo/os/$arch"
+    ],
+    "base": [
+      "base",
+      "base-devel",
+      "linux-zen",
+      "linux-lts",
+      "linux-firmware",
+      "btrfs-progs",
+      "networkmanager",
+      "sudo",
+      "intel-ucode",
+      "mkinitcpio",
+      "python"
+    ],
+    "essential": [
+      "nano",
+      "git",
+      "htop",
+      "fastfetch",
+      "mesa",
+      "vulkan-icd-loader",
+      "dosfstools",
+      "pacman-contrib",
+      "efibootmgr",
+      "dkms",
+      "linux-zen-headers",
+      "linux-lts-headers",
+      "nvidia-open-dkms",
+      "nvidia-utils",
+      "lib32-nvidia-utils",
+      "nvidia-settings"
+    ]
+  },
+  "boot": {
+    "timeout_seconds": 3,
+    "create_uefi_entry": true,
+    "prefer_kernel": "linux-zen",
+    "include_lts_if_available": true,
+    "cmdline_quiet": "quiet loglevel=3 nowatchdog mitigations=off nvme_core.default_ps_max_latency_us=0 nvidia-drm.modeset=1",
+    "fallback_cmdline_extra": "nvidia-drm.modeset=1"
+  },
+  "snapper": {
+    "timeline_hourly": 4,
+    "timeline_daily": 5,
+    "timeline_weekly": 3,
+    "timeline_monthly": 1,
+    "number_limit": 20,
+    "plugin_keep_snapshots": 0
+  },
+  "installer": {
+    "target_mountpoint": "/mnt",
+    "state_dir_live": "/tmp/legion-installer",
+    "log_dir": "/var/log/legion-installer",
+    "target_runtime_dir": "/usr/local/share/legion-installer",
+    "target_state_dir": "/root/arch-install-state"
+  }
+}
